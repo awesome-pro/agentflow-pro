@@ -1,0 +1,104 @@
+# ----------------------
+# Python basics
+# ----------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# ----------------------
+# Virtual environments
+# ----------------------
+.venv/
+venv/
+env/
+ENV/
+
+# uv-specific (lock + cache)
+.uv/
+uv.lock
+
+# ----------------------
+# Distribution / packaging
+# ----------------------
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ----------------------
+# Logs & runtime files
+# ----------------------
+*.log
+logs/
+*.pid
+*.seed
+
+# ----------------------
+# Environment variables
+# ----------------------
+.env
+.env.*
+*.env
+
+# ----------------------
+# IDE / Editor
+# ----------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ----------------------
+# macOS
+# ----------------------
+.DS_Store
+
+# ----------------------
+# Testing
+# ----------------------
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ----------------------
+# Type checking
+# ----------------------
+.mypy_cache/
+.pyre/
+
+# ----------------------
+# Ruff / linting
+# ----------------------
+.ruff_cache/
+
+# ----------------------
+# Jupyter
+# ----------------------
+.ipynb_checkpoints/
+
+# ----------------------
+# CLI / Agent artifacts
+# ----------------------
+outputs/
+runs/
+artifacts/
+cache/
+tmp/
+
+# ----------------------
+# Secrets / API keys
+# ----------------------
+secrets.json
+config.local.json
+
+# ----------------------
+# Misc
+# ----------------------
+*.sqlite3
+*.db

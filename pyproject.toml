@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentflow-pro"
+version = "0.1.0"
+description = "Trainable multi-agent reasoning framework with DAPO + PRM"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=1.75.0",
+    "pydantic>=2.11.0",
+    "rich>=13.9.0",
+    "typer>=0.15.0",
+    "python-dotenv>=1.1.0",
+]
+
+[project.optional-dependencies]
+tools = [
+    "fastmcp>=2.3.0",
+    "duckduckgo-search>=8.0.0",
+]
+memory = [
+    "qdrant-client>=1.14.0",
+    "sentence-transformers>=3.4.0",
+]
+rl = [
+    "trl>=0.17.0",
+    "transformers>=4.51.0",
+    "torch>=2.6.0",
+    "accelerate>=1.6.0",
+    "datasets>=3.5.0",
+    "unsloth>=2025.4.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.25.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "rl*", "tools*", "eval*", "train*"]
