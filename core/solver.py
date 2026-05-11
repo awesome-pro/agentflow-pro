@@ -21,32 +21,43 @@ class Solver:
         model: str = _DEFAULT_MODEL,
         base_url: str = _OLLAMA_BASE_URL,
         max_steps: int = 6,
+        temperature: float = 0.7,
+        verbose: bool = True,
     ):
-        client = OpenAI(base_url=base_url, api_key="ollama")
-        self.planner = Planner(client=client, model=model)
+        client = OpenAI(base_url=base_url, api_key="ollama", timeout=120.0)
+        self.planner = Planner(client=client, model=model, temperature=temperature)
         self.executor = Executor()
-        self.verifier = Verifier(client=client, model=model)
+        self.verifier = Verifier(client=client, model=model, temperature=temperature)
         self.memory = Memory()
         self.max_steps = max_steps
+        self.verbose = verbose
 
     def solve(self, query: str) -> SolverResult:
         self.memory.clear()
-        console.print(Panel(f"[bold cyan]Query:[/bold cyan] {query}", expand=False))
+        if self.verbose:
+            console.print(Panel(f"[bold cyan]Query:[/bold cyan] {query}", expand=False))
 
         for step in range(1, self.max_steps + 1):
-            console.rule(f"[yellow]Step {step} / {self.max_steps}[/yellow]")
+            if self.verbose:
+                console.rule(f"[yellow]Step {step} / {self.max_steps}[/yellow]")
 
             # --- Planner ---
-            plan = self.planner.plan(query, self.memory.to_context())
-            console.print(f"[green]Thought:[/green] {plan.thought}")
-            console.print(f"[green]Action:[/green]  {plan.action.value}  →  {plan.action_input[:120]}")
+            if self.verbose:
+                with console.status("[dim]Planner thinking…[/dim]", spinner="dots"):
+                    plan = self.planner.plan(query, self.memory.to_context())
+            else:
+                plan = self.planner.plan(query, self.memory.to_context())
+            if self.verbose:
+                console.print(f"[green]Thought:[/green] {plan.thought}")
+                console.print(f"[green]Action:[/green]  {plan.action.value}  →  {plan.action_input[:120]}")
 
             # Planner can signal a direct answer without calling executor/verifier
             if plan.action == Action.ANSWER:
-                console.print(Panel(
-                    f"[bold green]Answer:[/bold green] {plan.action_input}",
-                    title="Done", expand=False,
-                ))
+                if self.verbose:
+                    console.print(Panel(
+                        f"[bold green]Answer:[/bold green] {plan.action_input}",
+                        title="Done", expand=False,
+                    ))
                 return SolverResult(
                     answer=plan.action_input,
                     steps_taken=step,
@@ -55,19 +66,26 @@ class Solver:
 
             # --- Executor ---
             result = self.executor.execute(plan)
-            console.print(f"[cyan]Result:[/cyan]  {result.result[:200]}")
+            if self.verbose:
+                console.print(f"[cyan]Result:[/cyan]  {result.result[:200]}")
             self.memory.add(step, plan, result)
 
             # --- Verifier ---
-            verdict = self.verifier.verify(query, self.memory.to_context(), result.result)
-            icon = "[bold green]✓[/bold green]" if verdict.sufficient else "[bold red]✗[/bold red]"
-            console.print(f"{icon} [magenta]Sufficient:[/magenta] {verdict.reason}")
+            if self.verbose:
+                with console.status("[dim]Verifier checking…[/dim]", spinner="dots"):
+                    verdict = self.verifier.verify(query, self.memory.to_context(), result.result)
+            else:
+                verdict = self.verifier.verify(query, self.memory.to_context(), result.result)
+            if self.verbose:
+                icon = "[bold green]✓[/bold green]" if verdict.sufficient else "[bold red]✗[/bold red]"
+                console.print(f"{icon} [magenta]Sufficient:[/magenta] {verdict.reason}")
 
             if verdict.sufficient and verdict.answer:
-                console.print(Panel(
-                    f"[bold green]Answer:[/bold green] {verdict.answer}",
-                    title="Done", expand=False,
-                ))
+                if self.verbose:
+                    console.print(Panel(
+                        f"[bold green]Answer:[/bold green] {verdict.answer}",
+                        title="Done", expand=False,
+                    ))
                 return SolverResult(
                     answer=verdict.answer,
                     steps_taken=step,
@@ -75,7 +93,8 @@ class Solver:
                 )
 
         fallback = "Max steps reached without a confident answer."
-        console.print(Panel(f"[bold red]{fallback}[/bold red]", title="Stopped", expand=False))
+        if self.verbose:
+            console.print(Panel(f"[bold red]{fallback}[/bold red]", title="Stopped", expand=False))
         return SolverResult(answer=fallback, steps_taken=self.max_steps, trajectory=self.memory.entries)
 
     def _print_trajectory(self, result: SolverResult) -> None:

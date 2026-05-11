@@ -1,12 +1,9 @@
 from .types import Action, PlannerOutput, ExecutorOutput
+from tools.builtin.search import web_search
+from tools.builtin.python_exec import run_python
 
 
 class Executor:
-    """
-    Runs the action chosen by the Planner.
-    Step 1: stubs for search and code — replaced with real MCP tools in Step 2.
-    """
-
     def execute(self, plan: PlannerOutput) -> ExecutorOutput:
         match plan.action:
             case Action.THINK:
@@ -21,17 +18,12 @@ class Executor:
                 return ExecutorOutput(tool="unknown", result="Unrecognised action.", success=False)
 
     def _search(self, query: str) -> ExecutorOutput:
-        # Stub — replaced by DuckDuckGo/MCP tool in Step 2
-        return ExecutorOutput(
-            tool="search",
-            result=f"[search stub] No live search yet. Query was: {query}",
-            success=True,
-        )
+        try:
+            result = web_search(query)
+            return ExecutorOutput(tool="search", result=result, success=True)
+        except Exception as e:
+            return ExecutorOutput(tool="search", result=f"Search failed: {e}", success=False)
 
     def _code(self, code: str) -> ExecutorOutput:
-        # Stub — replaced by sandboxed Python executor in Step 2
-        return ExecutorOutput(
-            tool="code",
-            result=f"[code stub] No execution yet. Code was:\n{code}",
-            success=True,
-        )
+        result = run_python(code)
+        return ExecutorOutput(tool="code", result=result, success=True)

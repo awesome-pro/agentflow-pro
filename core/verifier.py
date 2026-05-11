@@ -1,7 +1,7 @@
 import json
 from openai import OpenAI
 from .types import VerifierOutput
-from .planner import _strip_markdown
+from .planner import _strip_markdown, _strip_think_tags, _RETRY_MSG
 
 _SYSTEM = """\
 You are a verifier. Given a question and the agent's work so far, decide if there is enough \
@@ -15,13 +15,16 @@ Respond with valid JSON only — no markdown, no extra text:
   "sufficient": true | false,
   "reason": "one sentence explaining your decision",
   "answer": "the final answer if sufficient, otherwise null"
-}"""
+}
+
+/no_think"""
 
 
 class Verifier:
-    def __init__(self, client: OpenAI, model: str):
+    def __init__(self, client: OpenAI, model: str, temperature: float = 0.2):
         self._client = client
         self._model = model
+        self._temperature = temperature
 
     def verify(self, query: str, memory_context: str, last_result: str) -> VerifierOutput:
         user_msg = (
@@ -30,15 +33,25 @@ class Verifier:
             f"Latest result: {last_result}\n\n"
             "Is there enough information to answer the question correctly?"
         )
+        messages: list[dict] = [
+            {"role": "system", "content": _SYSTEM},
+            {"role": "user", "content": user_msg},
+        ]
+        for _ in range(2):
+            raw = self._complete(messages)
+            try:
+                return VerifierOutput(**json.loads(raw))
+            except Exception:  # JSONDecodeError, ValidationError, TypeError, ...
+                messages = [*messages, {"role": "assistant", "content": raw}, {"role": "user", "content": _RETRY_MSG}]
+        # Couldn't parse the verifier — assume "not sufficient" so the solver keeps going.
+        return VerifierOutput(sufficient=False, reason="Verifier output could not be parsed; continuing.", answer=None)
+
+    def _complete(self, messages: list[dict]) -> str:
         response = self._client.chat.completions.create(
             model=self._model,
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2,
+            messages=messages,
+            temperature=self._temperature,
+            max_tokens=256,
+            response_format={"type": "json_object"},
         )
-        raw = response.choices[0].message.content.strip()
-        raw = _strip_markdown(raw)
-        data = json.loads(raw)
-        return VerifierOutput(**data)
+        return _strip_markdown(_strip_think_tags((response.choices[0].message.content or "").strip()))

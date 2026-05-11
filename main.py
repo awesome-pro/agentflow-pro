@@ -1,6 +1,9 @@
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
 from core.solver import Solver
+
+load_dotenv()
 
 app = typer.Typer(help="AgentFlow-Pro — trainable multi-agent reasoning framework")
 console = Console()
@@ -15,7 +18,8 @@ def solve(
 ):
     solver = Solver(model=model, base_url=base_url, max_steps=max_steps)
     result = solver.solve(query)
-    console.print(f"\n[bold]Steps taken:[/bold] {result.steps_taken}")
+    console.print(f"\n[bold]Answer:[/bold] {result.answer}")
+    console.print(f"[bold]Steps taken:[/bold] {result.steps_taken}")
 
 
 if __name__ == "__main__":
