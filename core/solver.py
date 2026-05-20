@@ -1,8 +1,8 @@
-from openai import OpenAI
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from .llm import OllamaClient
 from .memory import Memory
 from .planner import Planner
 from .executor import Executor
@@ -11,8 +11,8 @@ from .types import Action, SolverResult
 
 console = Console()
 
-_OLLAMA_BASE_URL = "http://localhost:11434/v1"
-_DEFAULT_MODEL = "qwen3.5:4b"
+_OLLAMA_BASE_URL = "http://localhost:11434"
+_DEFAULT_MODEL = "qwen3:8b"
 
 
 class Solver:
@@ -23,21 +23,28 @@ class Solver:
         max_steps: int = 6,
         temperature: float = 0.7,
         verbose: bool = True,
+        think: bool = False,
     ):
-        client = OpenAI(base_url=base_url, api_key="ollama", timeout=120.0)
-        self.planner = Planner(client=client, model=model, temperature=temperature)
+        client = OllamaClient(base_url=base_url, model=model, think=think)
+        self.planner = Planner(client=client, temperature=temperature)
         self.executor = Executor()
-        self.verifier = Verifier(client=client, model=model, temperature=temperature)
+        self.verifier = Verifier(client=client, temperature=temperature)
         self.memory = Memory()
         self.max_steps = max_steps
         self.verbose = verbose
+        self.think = think
+        self.model = model
 
-    def solve(self, query: str) -> SolverResult:
+    def solve(self, query: str, on_step=None) -> SolverResult:
+        """Run the agent loop. `on_step(step, max_steps)` is called at the start
+        of each step — used by the eval runner to show live progress."""
         self.memory.clear()
         if self.verbose:
             console.print(Panel(f"[bold cyan]Query:[/bold cyan] {query}", expand=False))
 
         for step in range(1, self.max_steps + 1):
+            if on_step is not None:
+                on_step(step, self.max_steps)
             if self.verbose:
                 console.rule(f"[yellow]Step {step} / {self.max_steps}[/yellow]")
 

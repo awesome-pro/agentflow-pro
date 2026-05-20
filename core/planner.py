@@ -1,6 +1,6 @@
 import json
 import re
-from openai import OpenAI
+from .llm import OllamaClient
 from .types import PlannerOutput, Action
 
 _SYSTEM = """\
@@ -24,18 +24,16 @@ Respond with valid JSON only — no markdown, no extra text:
   "thought": "your reasoning about what to do next",
   "action": "think | search | code | answer",
   "action_input": "the search query, code to run, or final answer text"
-}
-
-/no_think"""
+}"""
 
 _VALID_ACTIONS = {a.value for a in Action}
 _RETRY_MSG = "That response was not valid. Reply with ONLY the JSON object — no markdown, no commentary."
+_SCHEMA = PlannerOutput.model_json_schema()
 
 
 class Planner:
-    def __init__(self, client: OpenAI, model: str, temperature: float = 0.7):
+    def __init__(self, client: OllamaClient, temperature: float = 0.7):
         self._client = client
-        self._model = model
         self._temperature = temperature
 
     def plan(self, query: str, memory_context: str) -> PlannerOutput:
@@ -50,8 +48,9 @@ class Planner:
         ]
         last_err: Exception | None = None
         for _ in range(2):
-            raw = self._complete(messages)
+            raw = ""
             try:
+                raw = self._complete(messages)
                 data = json.loads(raw)
                 action = str(data.get("action", "")).strip().lower()
                 data["action"] = action if action in _VALID_ACTIONS else Action.THINK.value
@@ -67,14 +66,10 @@ class Planner:
         )
 
     def _complete(self, messages: list[dict]) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            temperature=self._temperature,
-            max_tokens=512,
-            response_format={"type": "json_object"},
+        raw = self._client.complete(
+            messages, temperature=self._temperature, max_tokens=512, response_format=_SCHEMA,
         )
-        return _strip_markdown(_strip_think_tags((response.choices[0].message.content or "").strip()))
+        return _strip_markdown(_strip_think_tags(raw))
 
 
 def _strip_think_tags(text: str) -> str:

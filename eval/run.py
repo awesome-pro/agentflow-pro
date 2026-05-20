@@ -12,11 +12,12 @@ app = typer.Typer(help="AgentFlow-Pro — eval harness")
 @app.command()
 def main(
     benchmark: str = typer.Option(..., "--benchmark", "-b", help="aime24 or gpqa"),
-    model: str = typer.Option("qwen3.5:4b", "--model", "-m"),
-    base_url: str = typer.Option("http://localhost:11434/v1", "--base-url"),
+    model: str = typer.Option("qwen3:8b", "--model", "-m"),
+    base_url: str = typer.Option("http://localhost:11434", "--base-url"),
     max_steps: int = typer.Option(8, "--max-steps", "-s"),
     limit: int | None = typer.Option(None, "--limit", "-l", help="Evaluate only the first N tasks"),
     temperature: float = typer.Option(0.0, "--temperature", "-t"),
+    think: bool = typer.Option(False, "--think", help="Enable Qwen thinking tokens; slower, default off"),
 ):
     if benchmark == "aime24":
         tasks = load_aime24()
@@ -26,7 +27,14 @@ def main(
         typer.echo(f"Unknown benchmark: {benchmark!r}. Choose 'aime24' or 'gpqa'.")
         raise typer.Exit(1)
 
-    solver = Solver(model=model, base_url=base_url, max_steps=max_steps, temperature=temperature, verbose=False)
+    solver = Solver(
+        model=model,
+        base_url=base_url,
+        max_steps=max_steps,
+        temperature=temperature,
+        verbose=False,
+        think=think,
+    )
     run_eval(solver, tasks, benchmark=benchmark, limit=limit)
 
 

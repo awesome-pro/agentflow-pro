@@ -39,10 +39,13 @@ name = "agentflow-pro"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "httpx" },
+    { name = "numpy" },
     { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "rich" },
+    { name = "sympy" },
     { name = "tavily-python" },
     { name = "typer" },
 ]
@@ -78,7 +81,9 @@ requires-dist = [
     { name = "datasets", marker = "extra == 'eval'", specifier = ">=3.5.0" },
     { name = "datasets", marker = "extra == 'rl'", specifier = ">=3.5.0" },
     { name = "fastmcp", marker = "extra == 'tools'", specifier = ">=2.3.0" },
+    { name = "httpx", specifier = ">=0.28.0" },
     { name = "math-verify", marker = "extra == 'eval'", specifier = ">=0.5.0" },
+    { name = "numpy", specifier = ">=2.0.0" },
     { name = "openai", specifier = ">=1.75.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.0" },
@@ -87,6 +92,7 @@ requires-dist = [
     { name = "qdrant-client", marker = "extra == 'memory'", specifier = ">=1.14.0" },
     { name = "rich", specifier = ">=13.9.0" },
     { name = "sentence-transformers", marker = "extra == 'memory'", specifier = ">=3.4.0" },
+    { name = "sympy", specifier = ">=1.13.0" },
     { name = "tavily-python", specifier = ">=0.5.0" },
     { name = "torch", marker = "extra == 'rl'", specifier = ">=2.6.0" },
     { name = "transformers", marker = "extra == 'rl'", specifier = ">=4.51.0" },

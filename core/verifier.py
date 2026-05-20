@@ -1,5 +1,5 @@
 import json
-from openai import OpenAI
+from .llm import OllamaClient
 from .types import VerifierOutput
 from .planner import _strip_markdown, _strip_think_tags, _RETRY_MSG
 
@@ -15,15 +15,14 @@ Respond with valid JSON only — no markdown, no extra text:
   "sufficient": true | false,
   "reason": "one sentence explaining your decision",
   "answer": "the final answer if sufficient, otherwise null"
-}
+}"""
 
-/no_think"""
+_SCHEMA = VerifierOutput.model_json_schema()
 
 
 class Verifier:
-    def __init__(self, client: OpenAI, model: str, temperature: float = 0.2):
+    def __init__(self, client: OllamaClient, temperature: float = 0.2):
         self._client = client
-        self._model = model
         self._temperature = temperature
 
     def verify(self, query: str, memory_context: str, last_result: str) -> VerifierOutput:
@@ -38,8 +37,9 @@ class Verifier:
             {"role": "user", "content": user_msg},
         ]
         for _ in range(2):
-            raw = self._complete(messages)
+            raw = ""
             try:
+                raw = self._complete(messages)
                 return VerifierOutput(**json.loads(raw))
             except Exception:  # JSONDecodeError, ValidationError, TypeError, ...
                 messages = [*messages, {"role": "assistant", "content": raw}, {"role": "user", "content": _RETRY_MSG}]
@@ -47,11 +47,7 @@ class Verifier:
         return VerifierOutput(sufficient=False, reason="Verifier output could not be parsed; continuing.", answer=None)
 
     def _complete(self, messages: list[dict]) -> str:
-        response = self._client.chat.completions.create(
-            model=self._model,
-            messages=messages,
-            temperature=self._temperature,
-            max_tokens=256,
-            response_format={"type": "json_object"},
+        raw = self._client.complete(
+            messages, temperature=self._temperature, max_tokens=256, response_format=_SCHEMA,
         )
-        return _strip_markdown(_strip_think_tags((response.choices[0].message.content or "").strip()))
+        return _strip_markdown(_strip_think_tags(raw))

@@ -1,11 +1,12 @@
 import json
 import os
 from datetime import datetime, timezone
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.table import Table
 
 from core.types import MemoryEntry
@@ -26,6 +27,7 @@ class EvalResult(BaseModel):
     correct: bool
     steps_taken: int
     trajectory: list[MemoryEntry]
+    elapsed_seconds: float = 0.0
     error: str | None = None
 
 
@@ -34,8 +36,11 @@ class EvalReport(BaseModel):
     model: str
     max_steps: int
     temperature: float
+    think: bool
     n: int
     accuracy: float
+    avg_steps: float
+    avg_elapsed_seconds: float
     results: list[EvalResult]
     timestamp: str
 
@@ -54,15 +59,23 @@ def run_eval(
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         TaskProgressColumn(),
+        TimeElapsedColumn(),
         console=console,
     ) as progress:
         bar = progress.add_task(f"[cyan]{benchmark}[/cyan]", total=len(subset))
         for t in subset:
             progress.update(bar, description=f"[cyan]{t.id}[/cyan]")
+            progress.console.print(f"[dim]Starting {t.id}...[/dim]")
+            started = perf_counter()
+
+            def on_step(step: int, max_steps: int, _id: str = t.id) -> None:
+                progress.update(bar, description=f"[cyan]{_id}[/cyan] step {step}/{max_steps}")
+
             try:
-                r = solver.solve(t.question)
+                r = solver.solve(t.question, on_step=on_step)
                 correct = score(t, r.answer)
-                results.append(EvalResult(
+                elapsed = perf_counter() - started
+                result = EvalResult(
                     id=t.id,
                     question=t.question,
                     predicted=r.answer,
@@ -70,9 +83,11 @@ def run_eval(
                     correct=correct,
                     steps_taken=r.steps_taken,
                     trajectory=r.trajectory,
-                ))
+                    elapsed_seconds=elapsed,
+                )
             except Exception as e:
-                results.append(EvalResult(
+                elapsed = perf_counter() - started
+                result = EvalResult(
                     id=t.id,
                     question=t.question,
                     predicted="",
@@ -80,19 +95,31 @@ def run_eval(
                     correct=False,
                     steps_taken=0,
                     trajectory=[],
+                    elapsed_seconds=elapsed,
                     error=str(e),
-                ))
+                )
+            results.append(result)
+            mark = "[green]✓[/green]" if result.correct else "[red]✗[/red]"
+            progress.console.print(
+                f"{mark} {t.id}: steps={result.steps_taken}, "
+                f"time={_format_elapsed(result.elapsed_seconds)}"
+            )
             progress.advance(bar)
 
     accuracy = sum(r.correct for r in results) / len(results) if results else 0.0
+    avg_steps = sum(r.steps_taken for r in results) / len(results) if results else 0.0
+    avg_elapsed = sum(r.elapsed_seconds for r in results) / len(results) if results else 0.0
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report = EvalReport(
         benchmark=benchmark,
-        model=solver.planner._model,
+        model=solver.model,
         max_steps=solver.max_steps,
         temperature=solver.planner._temperature,
+        think=solver.think,
         n=len(results),
         accuracy=accuracy,
+        avg_steps=avg_steps,
+        avg_elapsed_seconds=avg_elapsed,
         results=results,
         timestamp=timestamp,
     )
@@ -115,14 +142,26 @@ def _print_summary(report: EvalReport) -> None:
     table.add_column("ID", style="yellow", width=12)
     table.add_column("✓", width=3)
     table.add_column("Steps", width=5)
+    table.add_column("Time", width=8)
     table.add_column("Predicted", width=30)
     table.add_column("Gold", width=10)
 
     for r in report.results:
         mark = "[green]✓[/green]" if r.correct else "[red]✗[/red]"
         err = f"[red]ERR: {r.error[:25]}[/red]" if r.error else r.predicted[:30]
-        table.add_row(r.id, mark, str(r.steps_taken), err, r.gold)
+        table.add_row(r.id, mark, str(r.steps_taken), _format_elapsed(r.elapsed_seconds), err, r.gold)
 
     console.print(table)
     pct = f"{report.accuracy:.1%}"
     console.print(f"\n[bold]Accuracy: {pct}[/bold] ({sum(r.correct for r in report.results)}/{report.n})")
+    console.print(
+        f"[bold]Avg steps:[/bold] {report.avg_steps:.2f} · "
+        f"[bold]Avg time:[/bold] {_format_elapsed(report.avg_elapsed_seconds)}"
+    )
+
+
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, rem = divmod(int(seconds), 60)
+    return f"{minutes}m {rem:02d}s"
