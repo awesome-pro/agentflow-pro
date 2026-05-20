@@ -37,18 +37,21 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
   stdout; the sandbox rejects `open(...)` / `__import__(...)`.
 
 ## Phase 3 — Eval harness + baseline 🔵
-- **Goal**: measure untrained `qwen3.5:4b` on real benchmarks so Phase 4 has something to beat.
+- **Goal**: measure untrained `qwen3:8b` on AIME24 and GPQA Diamond so Phase 4 has credible
+  baselines to beat.
 - **Files**: `eval/datasets.py`, `eval/scorer.py`, `eval/runner.py`, `eval/run.py` *(all built)*;
-  output to `runs/eval_<benchmark>_<timestamp>.json`.
+  output to `runs/eval_<benchmark>_<timestamp>.json` with accuracy, average steps, and elapsed time.
 - **Commands**:
   ```bash
   uv sync --extra eval
   uv run python -m eval.run -b aime24 --limit 5 --max-steps 8   # gauge speed first
   uv run python -m eval.run -b aime24                            # full 30
-  # uv run python -m eval.run -b gpqa                            # needs HF_TOKEN in .env
+  uv run python -m eval.run -b gpqa --limit 5 --max-steps 4      # needs HF_TOKEN in .env
+  uv run python -m eval.run -b gpqa --max-steps 4                # full Diamond if runtime is acceptable
   ```
-- **Done when**: `runs/eval_aime24_*.json` exists and the baseline accuracy (+ avg steps) is recorded
-  in `docs/research.md` and the README table. GPQA Diamond deferred until `HF_TOKEN` is set.
+- **Done when**: `runs/eval_aime24_*.json` and `runs/eval_gpqa_*.json` exist and baseline accuracy
+  (+ avg steps) is recorded in `docs/research.md` and the README table. If full GPQA is too slow on
+  local Ollama, record a clearly labelled GPQA Diamond subset first and keep the full run queued.
 
 ## Phase 4 — DAPO + PRM (RL training) ⏳ **next**
 - **Goal**: LoRA-train the Planner with **DAPO** (decoupled clip + dynamic sampling) and a

@@ -65,7 +65,7 @@ Sequence diagram (time flows down):
 
 - **Input**: `query: str`, `memory_context: str` (from `Memory.to_context()`).
 - **Output**: `PlannerOutput`.
-- **LLM call**: `response_format={"type": "json_object"}`, `max_tokens=512`, `temperature=0.7`.
+- **LLM call**: JSON Schema `response_format`, `max_tokens=512`, `temperature=0.7`.
 - **Failure handling**: retry once with `_RETRY_MSG`; if still invalid JSON → degrade to `Action.THINK`
   with a safe input, never raises.
 - **Think toggle**: `extra_body={"think": self._think}` (default `False`).
@@ -76,6 +76,7 @@ Sequence diagram (time flows down):
 - **Output**: `VerifierOutput`.
 - **Conservative by default**: parse failure → `sufficient=False` so the loop continues.
 - `temperature=0.2` for deterministic judgement. `max_tokens=256`.
+- **Think toggle**: `extra_body={"think": self._think}` (default `False`), matching the Planner.
 
 ### `core/memory.py` — Memory
 
@@ -149,18 +150,21 @@ consistent extraction target.
 `run_eval(solver, tasks, benchmark, limit)`:
 - Iterates tasks (Rich progress bar), calls `solver.solve(task.question)`, scores, accumulates
   `EvalResult` objects.
-- Saves `runs/eval_<benchmark>_<timestamp>.json` (full `EvalReport` with per-problem trajectories).
-- Prints a Rich summary table + accuracy line.
+- Saves `runs/eval_<benchmark>_<timestamp>.json` (full `EvalReport` with trajectories and timing).
+- Prints per-task start/end timing plus a Rich summary table.
 
 Report JSON shape:
 ```json
 {
   "benchmark": "aime24",
-  "model": "qwen3.5:4b",
+  "model": "qwen3:8b",
   "max_steps": 8,
   "temperature": 0.0,
+  "think": false,
   "n": 30,
   "accuracy": 0.067,
+  "avg_steps": 5.2,
+  "avg_elapsed_seconds": 82.1,
   "timestamp": "20250512T...",
   "results": [
     { "id": "aime24_0", "correct": false, "steps_taken": 8,

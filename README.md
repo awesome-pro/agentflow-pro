@@ -18,7 +18,7 @@ outcome-only Flow-GRPO.
 
 | | AgentFlow (paper) | AgentFlow-Pro |
 |---|---|---|
-| Backbone | Qwen2.5-7B | Qwen3.5-4B (local dev) — runs on 8 GB Apple Silicon |
+| Backbone | Qwen2.5-7B | Qwen3-8B (local baseline; Qwen3-14B optional if memory allows) |
 | RL algorithm | Flow-GRPO (outcome reward) | **DAPO** (decoupled clip + dynamic sampling) |
 | Credit assignment | trajectory-level | **+ step-level PRM** (was *this* action a good move?) |
 | Tool layer | bespoke | **MCP / FastMCP** server + sandboxed Python exec |
@@ -37,13 +37,13 @@ Requires Python 3.11, [`uv`](https://docs.astral.sh/uv/), and a running [Ollama]
 # 1. install deps
 uv sync
 
-# 2. pull the dev model (≈3.4 GB)  — you manage Ollama/model installs yourself
-ollama pull qwen3.5:4b
+# 2. pull the recommended local eval model — you manage Ollama/model installs yourself
+ollama pull qwen3:8b
 
 # 3. solve something
 uv run python main.py "What is 15% of 240, then doubled?"
 uv run python main.py "Explain how transformers work" --max-steps 3
-uv run python main.py "..." --think          # enable Qwen3.5 reasoning tokens (slower, default off)
+uv run python main.py "..." --think          # enable Qwen3 reasoning tokens (slower, default off)
 ```
 
 Web search uses [Tavily](https://tavily.com) — put `TAVILY_API_KEY=...` in `.env` (copy from
@@ -55,12 +55,14 @@ Web search uses [Tavily](https://tavily.com) — put `TAVILY_API_KEY=...` in `.e
 uv sync --extra eval
 uv run python -m eval.run -b aime24 --limit 5 --max-steps 8   # small subset first
 uv run python -m eval.run -b aime24                            # full AIME24 (30 problems)
+uv run python -m eval.run -b gpqa --limit 5 --max-steps 4      # GPQA Diamond subset
 ```
 
 Reports are written to `runs/eval_<benchmark>_<timestamp>.json` with per-problem trajectories and an
-overall accuracy. GPQA Diamond (`-b gpqa`) is gated on HuggingFace — set `HF_TOKEN` in `.env` first.
+overall accuracy, average steps, and per-task elapsed time. GPQA Diamond (`-b gpqa`) is gated on
+Hugging Face — request access on the dataset page, then set `HF_TOKEN` in `.env`.
 
-Baseline numbers (untrained `qwen3.5:4b`) and the post-training delta live in
+Baseline numbers (untrained `qwen3:8b`) and the post-training delta live in
 [docs/research.md](docs/research.md).
 
 ## Repo map
@@ -77,7 +79,8 @@ Baseline numbers (untrained `qwen3.5:4b`) and the post-training delta live in
 ## Status
 
 Phases 0–2 (scaffold · core loop · real tools) and the eval harness are **done**. Next: record the
-AIME24 baseline, then build the RL training (`rl/` + `train/`). Track it in [ROADMAP.md](ROADMAP.md).
+AIME24 + GPQA Diamond baselines, then build the RL training (`rl/` + `train/`). Track it in
+[ROADMAP.md](ROADMAP.md).
 
 ## License
 

@@ -36,7 +36,7 @@ core/
                 SEARCH → tools.builtin.search.web_search; CODE → tools.builtin.python_exec.run_python.
   verifier.py   Verifier.verify(query, memory_context, last_result) -> VerifierOutput. LLM call,
                 strict (defaults to sufficient=False on parse failure so the loop keeps going).
-  solver.py     Solver — the loop. _DEFAULT_MODEL = "qwen3.5:4b", _OLLAMA_BASE_URL =
+  solver.py     Solver — the loop. _DEFAULT_MODEL = "qwen3:8b", _OLLAMA_BASE_URL =
                 "http://localhost:11434/v1". Early-exits on Planner ANSWER or Verifier sufficient.
   __init__.py   re-exports Solver + the public types.
 
@@ -77,10 +77,10 @@ docs/           architecture.md (loop + tools + harness internals) · research.m
   OpenAI-compatible endpoint: `OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")`.
   Explicitly **not** LiteLLM or any router.
 - **All data models are Pydantic v2 in `core/types.py`.** Don't scatter dataclasses/dicts.
-- **Structured LLM output**: `response_format={"type": "json_object"}`, then parse with
+- **Structured LLM output**: use OpenAI-compatible JSON Schema `response_format`, then parse with
   retry-once-then-degrade (copy the pattern in `Planner.plan` — try `json.loads`, on failure append
   `_RETRY_MSG` and retry once, then fall back to a safe default rather than crashing).
-- **Qwen3.5 "thinking"**: pass `extra_body={"think": <bool>}` through the OpenAI SDK. Default **off**
+- **Qwen3 thinking**: pass `extra_body={"think": <bool>}` through the OpenAI SDK. Default **off**
   (it was burning >1 min per call). The `--think` CLI flag and the `think=` constructor args turn it
   back on when needed.
 - **Match the surrounding code** — comment density, naming, the `match`/`case` style in `executor.py`.
@@ -100,16 +100,16 @@ uv run python -m tools.mcp_server                  # FastMCP server (needs --ext
 uv run pytest                                      # once tests exist (none yet)
 ```
 
-Ollama must be running locally with `qwen3.5:4b` pulled. **You (the user) manage Ollama and model
-installs** — code should never try to pull models or assume CUDA. Default dev model fits 8 GB Apple
-Silicon; **RL training needs a rented ~24 GB GPU** (e.g. RunPod RTX 4090).
+Ollama must be running locally with `qwen3:8b` pulled. **You (the user) manage Ollama and model
+installs** — code should never try to pull models or assume CUDA. Use `qwen3:14b` only if local
+memory allows; **RL training needs a rented ~24 GB GPU** (e.g. RunPod RTX 4090).
 
 ## Status & what's next
 
 Phases 0–2 (scaffold · core loop · real tools) + the eval harness are **done**. The immediate next
-step is recording the **AIME24 baseline** for untrained `qwen3.5:4b`, then **Phase 4**: build `rl/`
-(`rewards.py`, `prm.py`, `dapo.py`, `trainer.py`, `dataset.py`) and `train/` (`config.yaml`,
-`run.py`). Full plan and acceptance criteria: **[ROADMAP.md](ROADMAP.md)**.
+step is recording **AIME24 + GPQA Diamond baselines** for untrained `qwen3:8b`, then **Phase 4**:
+build `rl/` (`rewards.py`, `prm.py`, `dapo.py`, `trainer.py`, `dataset.py`) and `train/`
+(`config.yaml`, `run.py`). Full plan and acceptance criteria: **[ROADMAP.md](ROADMAP.md)**.
 
 **Definition of done for the project**: baseline eval numbers → train the Planner (DAPO + PRM) →
 re-eval → report the base→trained delta in `docs/research.md` and the README table.

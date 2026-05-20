@@ -6,8 +6,10 @@ if TYPE_CHECKING:
 
 
 def extract_final_answer(text: str) -> str:
-    # 1. \boxed{...}
-    m = re.search(r"\\boxed\{([^}]*)\}", text)
+    # 1. \boxed{...}. The leading "\b" is a JSON escape (backspace), so a \boxed
+    # emitted inside a JSON string arrives mangled as "\x08oxed{...}". Match the
+    # "oxed{...}" tail, which is shared by both the intact and mangled forms.
+    m = re.search(r"oxed\{([^}]*)\}", text)
     if m:
         return m.group(1).strip()
     # 2. "Answer: X" (letter or number)

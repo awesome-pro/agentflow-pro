@@ -121,7 +121,7 @@ The group advantage is then computed over the combined `r_t` values, not just `R
 
 | Item | Value |
 |---|---|
-| Backbone | `qwen3.5:4b` |
+| Backbone | `qwen3:8b` local baseline (`qwen3:14b` optional if local memory allows) |
 | Fine-tuning | LoRA (`r=16`, `alpha=32`, target: `q_proj`, `v_proj`, `o_proj`) |
 | Training data | AIME 2024 (30 problems) + additional math mix (MATH-500 sample, ~500 problems) |
 | Eval | AIME 2024 (held-out — same 30 for fair comparison); GPQA Diamond (once HF_TOKEN set) |
@@ -135,14 +135,23 @@ train/eval split.
 
 ### Baseline (Phase 3 — to be filled)
 
-Run: `uv run python -m eval.run -b aime24 --max-steps 8 --temperature 0.0`
+Run AIME24 and GPQA Diamond with Qwen thinking disabled by default:
 
-| Model | AIME24 accuracy | Avg steps | Notes |
-|---|---|---|---|
-| `qwen3.5:4b` (untrained) | TBD | TBD | baseline; `--think` off |
-| `qwen3.5:4b` + DAPO + PRM | TBD | TBD | Phase 4 result |
+```bash
+uv run python -m eval.run -b aime24 --max-steps 8 --temperature 0.0
+uv run python -m eval.run -b gpqa --max-steps 4 --temperature 0.0
+```
 
-Update this table after each run. The report JSON in `runs/` has per-problem breakdowns.
+| Model | Benchmark | Accuracy | Avg steps | Avg time | Notes |
+|---|---|---|---|---|---|
+| `qwen3:8b` (untrained) | AIME24 | TBD | TBD | TBD | baseline; `--think` off |
+| `qwen3:8b` (untrained) | GPQA Diamond | TBD | TBD | TBD | baseline or labelled subset; `HF_TOKEN` required |
+| `qwen3:8b` + DAPO + PRM | AIME24 | TBD | TBD | TBD | Phase 4 result |
+| `qwen3:8b` + DAPO + PRM | GPQA Diamond | TBD | TBD | TBD | Phase 4 result |
+
+Update this table after each run. The report JSON in `runs/` has per-problem trajectories, elapsed
+time, and error details. Discard diagnostic runs where the planner repeatedly falls back to generic
+`think` actions because those measure JSON/tooling reliability rather than benchmark ability.
 
 ### Training run checklist
 
