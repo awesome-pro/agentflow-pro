@@ -47,6 +47,60 @@ def load_aime24() -> list[Task]:
     return tasks
 
 
+def _norm(text: str) -> str:
+    """Normalize problem text for dedup — collapse whitespace, lowercase."""
+    return " ".join(text.split()).lower()
+
+
+def load_aime_train() -> list[Task]:
+    """Historical AIME problems (1983–2023) for RL training.
+
+    Disjoint from the AIME 2024 test set: the `Year <= 2023` filter is the
+    decontamination, and a text-level dedup against AIME24 is kept as auditable
+    insurance. Shuffled with a fixed seed so `--limit N` gives a spread of years.
+    """
+    try:
+        from datasets import load_dataset  # type: ignore
+    except ImportError:
+        raise ImportError("Install eval deps: uv sync --extra eval")
+
+    _patch_datasets_for_py314()
+    ds = load_dataset("di-zhang-fdu/AIME_1983_2024", split="train")
+
+    test_texts = {_norm(t.question) for t in load_aime24()}
+    tasks: list[Task] = []
+    skipped_2024 = 0
+    skipped_dup = 0
+    skipped_badans = 0
+    for row in ds:
+        try:
+            year = int(row.get("Year"))
+        except (TypeError, ValueError):
+            continue
+        if year >= 2024:
+            skipped_2024 += 1
+            continue
+        problem = (row.get("Question") or "").strip()
+        answer = str(row.get("Answer") or "").strip()
+        if not problem:
+            continue
+        # AIME answers are integers 0–999; skip the rare ambiguous-key rows.
+        if not answer.isdigit():
+            skipped_badans += 1
+            continue
+        question = problem + _BOXED_INSTRUCTION
+        if _norm(question) in test_texts:
+            skipped_dup += 1
+            continue
+        rid = str(row.get("ID") or len(tasks))
+        tasks.append(Task(id=f"train_{rid}", question=question, gold=answer, kind="math"))
+
+    print(f"[load_aime_train] {len(tasks)} train problems (excluded {skipped_2024} from 2024, "
+          f"{skipped_dup} text-dups vs AIME24, {skipped_badans} non-integer answers)")
+    random.Random(42).shuffle(tasks)
+    return tasks
+
+
 def load_gpqa_diamond() -> list[Task]:
     try:
         from datasets import load_dataset  # type: ignore

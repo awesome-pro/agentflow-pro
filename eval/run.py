@@ -1,7 +1,7 @@
 import typer
 from dotenv import load_dotenv
 from core.solver import Solver
-from eval.datasets import load_aime24, load_gpqa_diamond
+from eval.datasets import load_aime24, load_aime_train, load_gpqa_diamond
 from eval.runner import run_eval
 
 load_dotenv()
@@ -11,7 +11,7 @@ app = typer.Typer(help="AgentFlow-Pro — eval harness")
 
 @app.command()
 def main(
-    benchmark: str = typer.Option(..., "--benchmark", "-b", help="aime24 or gpqa"),
+    benchmark: str = typer.Option(..., "--benchmark", "-b", help="aime24, gpqa, or aime_train"),
     model: str = typer.Option("qwen3:8b", "--model", "-m"),
     base_url: str = typer.Option("http://localhost:11434", "--base-url"),
     max_steps: int = typer.Option(8, "--max-steps", "-s"),
@@ -23,8 +23,10 @@ def main(
         tasks = load_aime24()
     elif benchmark == "gpqa":
         tasks = load_gpqa_diamond()
+    elif benchmark == "aime_train":
+        tasks = load_aime_train()
     else:
-        typer.echo(f"Unknown benchmark: {benchmark!r}. Choose 'aime24' or 'gpqa'.")
+        typer.echo(f"Unknown benchmark: {benchmark!r}. Choose 'aime24', 'gpqa', or 'aime_train'.")
         raise typer.Exit(1)
 
     solver = Solver(
