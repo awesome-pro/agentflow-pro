@@ -38,15 +38,28 @@ def score_math(pred: str, gold: str) -> bool:
         return pred.strip().lower() == gold.strip().lower()
 
 
+def _mc_letter(pred: str) -> str:
+    """Pull the chosen A–D option letter out of a free-form answer."""
+    # 1. explicit "Answer: X" / "answer is X"
+    m = re.search(r"answer\s*(?:is\s*)?[:=\-]?\s*\(?([A-Da-d])\b", pred, re.IGNORECASE)
+    if m:
+        return m.group(1).upper()
+    # 2. leading "X)" / "X." / "(X)" — e.g. "D) 10^-4 eV"
+    m = re.match(r"\s*\(?([A-Da-d])[)\.:]", pred)
+    if m:
+        return m.group(1).upper()
+    # 3. the whole answer is a single letter
+    s = pred.strip()
+    if len(s) == 1 and s.upper() in "ABCD":
+        return s.upper()
+    # 4. exactly one distinct A–D token anywhere (last resort)
+    letters = {x.upper() for x in re.findall(r"\b([A-Da-d])\b", pred)}
+    return letters.pop() if len(letters) == 1 else ""
+
+
 def score_mc(pred: str, gold_letter: str) -> bool:
-    m = re.search(r"[Aa]nswer[:\s]+([A-Da-d])", pred)
-    if m:
-        return m.group(1).upper() == gold_letter.upper()
-    # Fallback: lone trailing capital A–D
-    m = re.search(r"\b([A-D])\b\s*$", pred.strip())
-    if m:
-        return m.group(1).upper() == gold_letter.upper()
-    return False
+    letter = _mc_letter(pred)
+    return bool(letter) and letter == gold_letter.strip().upper()
 
 
 def score(task: "Task", pred: str) -> bool:
