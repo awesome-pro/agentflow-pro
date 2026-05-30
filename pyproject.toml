@@ -41,6 +41,9 @@ rl = [
     "trl>=1.5.0,<2.0",
     "peft>=0.17.0",
     "torch>=2.6.0",
+    # torch's Linux CUDA wheels need cuSPARSELt at runtime; pin it explicitly so a
+    # lock generated on a non-CUDA box (macOS) still installs it on the Linux GPU.
+    "nvidia-cusparselt-cu12; sys_platform == 'linux'",
     "accelerate>=1.6.0",
     "datasets>=3.5.0",
 ]

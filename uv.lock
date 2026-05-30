@@ -66,6 +66,7 @@ memory = [
 rl = [
     { name = "accelerate" },
     { name = "datasets" },
+    { name = "nvidia-cusparselt-cu12", marker = "sys_platform == 'linux'" },
     { name = "peft" },
     { name = "torch" },
     { name = "transformers" },
@@ -84,6 +85,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "math-verify", marker = "extra == 'eval'", specifier = ">=0.5.0" },
     { name = "numpy", specifier = ">=2.0.0" },
+    { name = "nvidia-cusparselt-cu12", marker = "sys_platform == 'linux' and extra == 'rl'" },
     { name = "openai", specifier = ">=1.75.0" },
     { name = "peft", marker = "extra == 'rl'", specifier = ">=0.17.0" },
     { name = "pydantic", specifier = ">=2.11.0" },
@@ -1837,6 +1839,7 @@ name = "nvidia-cusparselt-cu12"
 version = "0.7.1"
 source = { registry = "https://pypi.org/simple" }
 wheels = [
+    { url = "https://files.pythonhosted.org/packages/73/b9/598f6ff36faaece4b3c50d26f50e38661499ff34346f00e057760b35cc9d/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_aarch64.whl", hash = "sha256:8878dce784d0fac90131b6817b607e803c36e629ba34dc5b433471382196b6a5", size = 283835557, upload-time = "2025-02-26T00:16:54.265Z" },
     { url = "https://files.pythonhosted.org/packages/56/79/12978b96bd44274fe38b5dde5cfb660b1d114f70a65ef962bcbbed99b549/nvidia_cusparselt_cu12-0.7.1-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f1bb701d6b930d5a7cea44c19ceb973311500847f81b634d802b7b539dc55623", size = 287193691, upload-time = "2025-02-26T00:15:44.104Z" },
 ]
 
