@@ -32,15 +32,17 @@ memory = [
     "sentence-transformers>=3.4.0",
 ]
 rl = [
-    # DAPO lives in trl>=1.4.0 (loss_type="dapo", epsilon_high, soft overlong
-    # punishment). Install on the GPU box; unsloth/trl/transformers versions
-    # must be mutually compatible — resolve them together there.
-    "trl>=1.4.0",
-    "transformers>=4.55.0",
+    # DAPO lives in TRL (loss_type="dapo" is the default; clip-higher via
+    # epsilon_high, soft overlong punishment via trl.rewards). The policy is
+    # trained as bf16 + a PEFT LoRA adapter — NO unsloth/bitsandbytes, which keeps
+    # the dependency set small and reproducible (a 48GB GPU fits the 8B in bf16).
+    # transformers is pinned <5: the 5.x line breaks trl/peft (validated 2026-05).
+    "transformers>=4.55.0,<5.0",
+    "trl>=1.5.0,<2.0",
+    "peft>=0.17.0",
     "torch>=2.6.0",
     "accelerate>=1.6.0",
     "datasets>=3.5.0",
-    "unsloth>=2025.4.0",
 ]
 dev = [
     "pytest>=8.3.0",

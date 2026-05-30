@@ -34,6 +34,13 @@ call is one "action".
 DAPO was introduced by ByteDance/Tsinghua (arXiv 2503.14476) specifically to fix the four problems
 above. We adapt its four tricks to the agentic setting.
 
+> **Implementation note.** Four of the five pieces come from TRL 1.4's `GRPOTrainer` with
+> `loss_type="dapo"` (clip-higher via `epsilon=0.2` / `epsilon_high=0.28`, token-level loss, overlong
+> filtering via `mask_truncated_completions=True`, soft overlong punishment via
+> `get_soft_overlong_punishment`). **Dynamic sampling is not in TRL** and is implemented from scratch
+> in `train/dynamic_sampling.py`. The wiring lives in `train/dapo.py` (`beta=0.0` — the KL-free DAPO
+> objective). The descriptions below are the design rationale; the parenthetical maps each to code.
+
 ### Trick 1 — Clip-higher (decoupled clip bounds)
 
 Standard PPO/GRPO uses a single symmetric clip `[1-ε, 1+ε]`. DAPO decouples them:
@@ -80,38 +87,43 @@ if steps_taken == max_steps and not answered_correctly:
 ## Contribution 2 — PRM (Process Reward Model)
 
 A **Process Reward Model** assigns a reward to each individual Planner action, not just the final
-outcome. This gives a much denser gradient signal for long agentic trajectories.
+outcome. This gives a much denser gradient signal for long agentic trajectories. Rather than
+hand-tuned heuristics, AgentFlow-Pro uses a **learned** PRM — a small model trained to predict
+step quality — which is the headline research contribution.
 
-### What we're rewarding at the step level
+### The pipeline (`train/judge.py` → `train/prm.py` → `train/reward.py`)
 
-For each step `t` with `action_t`:
+1. **Collect.** Run the untrained agent over the AIME *training* split (`eval/run.py --benchmark
+   aime_train`), dumping full step-by-step trajectories to `runs/`.
+2. **Label.** `train/judge.py` scores every Planner step on a calibrated 0–1 rubric using an LLM
+   judge. The default judge is **DeepSeek** (`deepseek-chat`), chosen deliberately because it is
+   *stronger than the 8B policy it supervises* — the standard RLHF/distillation principle that the
+   reward signal should come from a more capable model. The judge sees the problem, the prior context,
+   the proposed step, **and** the tool result; it runs **once** to build the dataset
+   (`artifacts/prm_labels.jsonl`, cost < \$1). A free local Ollama judge is available for smoke tests.
+3. **Train the PRM.** `train/prm.py` fine-tunes **Qwen3-0.6B** as a sequence-regression model
+   (`AutoModelForSequenceClassification`, `num_labels=1`, `problem_type="regression"`) with an MSE
+   loss against the judge scores. Held-out MAE is the convergence check.
+4. **Reward.** At RL time, `train/reward.py`'s `make_prm_reward` scores each generated Planner action
+   with the trained PRM (clamped to `[0,1]`); a malformed completion (non-JSON, missing fields,
+   unknown action) is forced to `0.0`. **The live RL reward is the PRM — DeepSeek never runs in the
+   training loop or at inference.**
 
-| Signal | Implementation |
-|---|---|
-| **Verifier verdict** | `+0.3` if `Verifier.verify(...)` returns `sufficient=True` after this step |
-| **Tool success** | `+0.1` if `ExecutorOutput.success=True` and the result is non-trivial (not an error string) |
-| **Repeated action** | `-0.2` if `action_t == action_{t-1}` with the same input (stuck in a loop) |
-| **Tool error** | `-0.2` if `ExecutorOutput.success=False` (search fail, code error) |
-| **Progress bonus** | `+0.05` per unique action type used so far (diversity bonus) |
+### One detail worth calling out: `build_prm_input`
 
-These are heuristics for **v1 PRM**. A **v2** learned PRM head (a small MLP on top of a frozen
-Planner hidden state) can be trained offline on labelled trajectories once we have enough rollouts.
+`train/data.py:build_prm_input` is the **single source of truth** for the exact text the PRM scores.
+The labeler, the PRM trainer, and the RL reward function all call it, so the three can never drift out
+of format. It deliberately **excludes the tool result**: the PRM rates the Planner's *decision*
+(thought + action + input), which is the thing being optimized — not the environment's response to it.
+(The judge, by contrast, *does* see the result when assigning the label, since it is grading with
+hindsight.)
 
-### Combining PRM + outcome reward into DAPO advantage
+### What the policy sees
 
-The final per-step reward used for the policy update:
-
-```
-r_t = α · PRM_score(state_t, action_t) + β · R_outcome · γ^(T - t)
-```
-
-Where:
-- `α = 0.4`, `β = 0.6` — weight balance (tunable).
-- `γ = 0.95` — discount; later steps get slightly less credit for the outcome.
-- `R_outcome ∈ {0, 1}` — did the final answer match? (from `eval/scorer.py`).
-- `T` = total steps in the trajectory.
-
-The group advantage is then computed over the combined `r_t` values, not just `R_outcome`.
+The PRM score is the per-action reward fed to DAPO's group-relative advantage. Because the signal is
+now dense (one score per step rather than one bit per trajectory), the advantage distinguishes a
+strong opening move from a wasteful mid-trajectory `think`-loop even when the final answer is the
+same — exactly the credit-assignment gap that motivates the project.
 
 ---
 
@@ -121,17 +133,19 @@ The group advantage is then computed over the combined `r_t` values, not just `R
 
 | Item | Value |
 |---|---|
-| Backbone | `qwen3:8b` local baseline (`qwen3:14b` optional if local memory allows) |
-| Fine-tuning | LoRA (`r=16`, `alpha=32`, target: `q_proj`, `v_proj`, `o_proj`) |
-| Training data | AIME 2024 (30 problems) + additional math mix (MATH-500 sample, ~500 problems) |
-| Eval | AIME 2024 (held-out — same 30 for fair comparison); GPQA Diamond (once HF_TOKEN set) |
+| Policy backbone | `Qwen3-8B`, bf16 + PEFT LoRA (`lora_rank=32`, all attn + MLP projections) |
+| PRM backbone | `Qwen3-0.6B` + regression head (MSE on judge scores) |
+| Judge | DeepSeek `deepseek-chat` (one-shot labeling; stronger than the policy) |
+| Training data | `di-zhang-fdu/AIME_1983_2024`, Year ≤ 2023 (918 problems), de-duplicated vs AIME24 |
+| Eval | AIME 2024 (30, disjoint from training); GPQA Diamond (gated — `HF_TOKEN`) |
 | Metrics | Accuracy, avg steps to answer, tool-call diversity |
-| Training infra | RunPod RTX 4090 (24 GB), est. $5–15 for a full run |
-| Framework | TRL `GRPOTrainer` + custom DAPO advantage fn; Unsloth for LoRA efficiency |
+| RL framework | TRL `GRPOTrainer` (`loss_type="dapo"`) + hand-built dynamic sampling; PEFT LoRA (bf16) |
+| Infra | RunPod A40 (48 GB) recommended, est. $8–15 for a full run |
 
-**Important**: the 30 AIME 2024 problems serve as both a small training seed AND the eval set in the
-first experiments (proof-of-concept). When a larger training corpus is available, move to a proper
-train/eval split.
+**Train/test separation**: training uses AIME 1983–2023 and is explicitly de-duplicated against the
+AIME 2024 test set in `eval/datasets.py:load_aime_train` — the model is never trained on what it is
+scored on. (An earlier proof-of-concept sketch reused the 30 AIME24 problems for both; that was
+dropped in favor of the disjoint split above.)
 
 ### Baseline (Phase 3 — to be filled)
 
@@ -144,10 +158,13 @@ uv run python -m eval.run -b gpqa --max-steps 4 --temperature 0.0
 
 | Model | Benchmark | Accuracy | Avg steps | Avg time | Notes |
 |---|---|---|---|---|---|
-| `qwen3:8b` (untrained) | AIME24 | TBD | TBD | TBD | baseline; `--think` off |
-| `qwen3:8b` (untrained) | GPQA Diamond | TBD | TBD | TBD | baseline or labelled subset; `HF_TOKEN` required |
-| `qwen3:8b` + DAPO + PRM | AIME24 | TBD | TBD | TBD | Phase 4 result |
-| `qwen3:8b` + DAPO + PRM | GPQA Diamond | TBD | TBD | TBD | Phase 4 result |
+| `qwen3:8b` (untrained) | AIME24 | **33.3%** (10/30) | 4.0 | ~3m12s/prob | baseline; `--think` off, `temp=0`, verified — no false positives |
+| `qwen3:8b` (untrained) | GPQA Diamond | TBD | TBD | TBD | baseline; `HF_TOKEN` required (queued for the GPU box) |
+| `qwen3:8b` + DAPO + PRM | AIME24 | TBD | TBD | TBD | Phase 4 result (GPU run pending) |
+| `qwen3:8b` + DAPO + PRM | GPQA Diamond | TBD | TBD | TBD | Phase 4 result (GPU run pending) |
+
+Baseline failure split (AIME24): 10 correct, ~8 confident-but-wrong, 12 hit `max_steps` without the
+Verifier accepting an answer. Run JSON: `runs/eval_aime24_20260520T103641Z.json`.
 
 Update this table after each run. The report JSON in `runs/` has per-problem trajectories, elapsed
 time, and error details. Discard diagnostic runs where the planner repeatedly falls back to generic
@@ -155,12 +172,16 @@ time, and error details. Discard diagnostic runs where the planner repeatedly fa
 
 ### Training run checklist
 
-- [ ] `uv sync --extra rl` on the GPU box
-- [ ] Set `WANDB_API_KEY` in `.env` (optional; fallback to stdout logging)
-- [ ] `uv run python -m train.run --config train/config.yaml`
-- [ ] Confirm loss decreasing, reward increasing over first 50 steps
-- [ ] Save checkpoint to `checkpoints/dapo_prm_<run_id>/`
-- [ ] Re-run eval: `uv run python -m eval.run -b aime24 -m checkpoints/dapo_prm_<run_id>/`
+Full step-by-step infra walkthrough: [phase4-runpod-guide.md](phase4-runpod-guide.md).
+
+- [ ] `uv sync --extra rl --extra eval` on the GPU box; `DEEPSEEK_API_KEY` + `HF_TOKEN` in `.env`
+- [ ] Collect: `uv run python -m eval.run --benchmark aime_train --limit 150 --max-steps 6`
+- [ ] Label: `uv run python -m train.judge --runs "runs/eval_aime_train_*.json"`
+- [ ] Train PRM: `uv run python -m train.prm train --labels artifacts/prm_labels.jsonl`
+      (sanity-check with `uv run python -m train.prm score`)
+- [ ] DAPO: `uv run python -m train.dapo --prm artifacts/prm --runs "runs/eval_aime_train_*.json"`
+- [ ] Confirm the reward curve climbs over the first ~50 steps
+- [ ] Export GGUF → load into Ollama → re-run `eval.run -b aime24 -m agentflow-planner`
 - [ ] Fill in the results table above
 
 ---
@@ -171,8 +192,8 @@ time, and error details. Discard diagnostic runs where the planner repeatedly fa
 |---|---|
 | **Reward hacking** — model learns to call `think` many times (safe, always `success=True`) | Repeated-action penalty; cap `think` steps at 2 in the Planner prompt |
 | **PRM cold-start** — heuristic rewards are noisy early in training | Start with higher `β` (outcome weight); reduce `α` (PRM weight) for first N steps |
-| **Small-model ceiling** — 4B may not have the capacity to improve on AIME significantly | That's fine for a portfolio project; report the trajectory improvement, not just accuracy |
-| **Ollama `think` mode instability** — the model occasionally sends unexpected tokens | Already handled: `_strip_think_tags` strips `<think>...</think>` blocks; `extra_body={"think": False}` disables at source |
+| **Small-model ceiling** — an 8B may have limited headroom to improve on AIME | Report the *process* improvement (avg steps, tool-call efficiency, step-reward curve), not accuracy alone |
+| **Ollama `think` mode instability** — the model occasionally sends unexpected tokens | Already handled: `_strip_think_tags` strips `<think>...</think>` blocks; `OllamaClient(think=False)` on the native `/api/chat` endpoint disables it at source |
 | **GPQA gate** — dataset requires HF login | Set `HF_TOKEN` in `.env`; or use a different multiple-choice benchmark |
 
 ---
@@ -183,4 +204,4 @@ time, and error details. Discard diagnostic runs where the planner repeatedly fa
 - DAPO: [arXiv 2503.14476](https://arxiv.org/abs/2503.14476) — "DAPO: An Open-Source LLM Reinforcement Learning System at Scale"
 - GRPO: DeepSeek-R1 tech report (the base algorithm DAPO improves on)
 - TRL GRPOTrainer: [huggingface.co/docs/trl](https://huggingface.co/docs/trl)
-- Unsloth LoRA: [github.com/unslothai/unsloth](https://github.com/unslothai/unsloth)
+- PEFT (LoRA): [huggingface.co/docs/peft](https://huggingface.co/docs/peft)

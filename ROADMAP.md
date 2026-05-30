@@ -11,8 +11,8 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
 | 0 | Scaffold | ✅ |
 | 1 | Core solver loop | ✅ |
 | 2 | Real tools (MCP + Tavily + sandboxed exec) | ✅ |
-| 3 | Eval harness + **baseline numbers** | 🔵 (harness done, baseline not yet recorded) |
-| 4 | **DAPO + PRM — RL training** | ⏳ |
+| 3 | Eval harness + **baseline numbers** | 🔵 (harness done; AIME24 baseline = 33.3%, GPQA pending) |
+| 4 | **DAPO + PRM — RL training** | 🔵 (full pipeline built & committed; GPU run pending) |
 | 5 | Episodic memory (Qdrant) | 🟡 |
 | 6 | Report & polish | ⏳ |
 
@@ -52,27 +52,35 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
 - **Done when**: `runs/eval_aime24_*.json` and `runs/eval_gpqa_*.json` exist and baseline accuracy
   (+ avg steps) is recorded in `docs/research.md` and the README table. If full GPQA is too slow on
   local Ollama, record a clearly labelled GPQA Diamond subset first and keep the full run queued.
+- **Status**: AIME24 baseline **done — 33.3% (10/30)**, `qwen3:8b`, `max_steps 6`, `temp 0`, verified
+  (no false positives). GPQA Diamond baseline queued for the GPU box. AIME *training* split loader
+  (`load_aime_train`, 918 problems, Year ≤ 2023, de-duplicated vs AIME24) also shipped here.
 
-## Phase 4 — DAPO + PRM (RL training) ⏳ **next**
-- **Goal**: LoRA-train the Planner with **DAPO** (decoupled clip + dynamic sampling) and a
-  **Process Reward Model** (step-level credit). Design: [docs/research.md](docs/research.md).
-- **Files to create**:
-  - `rl/__init__.py`
-  - `rl/rewards.py` — `outcome_reward(task, answer)`; heuristic step rewards (tool-error penalty,
-    repeated-action penalty, progress bonus).
-  - `rl/prm.py` — `ProcessRewardModel.score(state, action)`; v1 rule/verifier-derived, v2 a small
-    learned head.
-  - `rl/dapo.py` — DAPO advantage computation + the four tricks (clip-higher, dynamic sampling,
-    token-level PG loss, overlong-reward shaping), layered on TRL's GRPO/PPO trainer.
-  - `rl/trainer.py` — training loop: roll out trajectories with `Solver` as the environment, collect
-    `(state, action, reward)`, update the Planner LoRA.
-  - `rl/dataset.py` — training task mix (math + agentic), reusing `eval/datasets.py` loaders.
-  - `train/config.yaml` — model, LoRA rank, lr, batch, DAPO hyperparams, dataset paths.
-  - `train/run.py` — `uv run python -m train.run --config train/config.yaml` (Typer CLI).
-- **Environment**: needs a rented ~24 GB GPU (RunPod RTX 4090, est. $5–15 total). `uv sync --extra rl`
-  on that box only; code must not assume local CUDA.
-- **Done when**: a training run completes on the GPU, a LoRA checkpoint is saved, and the loss/reward
-  curves look sane (logged to W&B or stdout).
+## Phase 4 — DAPO + PRM (RL training) 🔵 **code done; GPU run pending**
+- **Goal**: LoRA-train the Planner with **DAPO** (decoupled clip + dynamic sampling) and a **learned
+  Process Reward Model** (step-level credit). Design: [docs/research.md](docs/research.md).
+- **What shipped** (the actual layout — `train/`, not the originally-sketched `rl/`):
+  - `train/data.py` — shared plumbing: `Step` / `PRMExample`, `load_steps()` (pull Planner steps out
+    of trajectory JSON), and `build_prm_input()` — the **single source of truth** for the text the PRM
+    scores (shared by labeler, trainer, reward fn; deliberately excludes the tool result).
+  - `train/judge.py` — LLM-judge labeling. Scores each step 0–1 with **DeepSeek** (`deepseek-chat`,
+    stronger than the 8B policy); free Ollama judge available for smoke tests. Writes
+    `artifacts/prm_labels.jsonl`.
+  - `train/prm.py` — the **PRM**: `Qwen3-0.6B` + a regression head (`num_labels=1`), MSE-trained on
+    the judge scores; `PRM.score(texts) -> [0,1]` inference wrapper.
+  - `train/reward.py` — `make_prm_reward()`: a TRL-style reward fn; malformed/unknown-action ⇒ 0.0,
+    else the PRM score. The PRM (not DeepSeek) is the live training signal.
+  - `train/dynamic_sampling.py` — `curate_prompts()` / `has_signal()`: the **one DAPO component TRL
+    does not implement** — drops zero-variance prompt groups before training.
+  - `train/dapo.py` — the trainer: `Qwen3-8B` bf16 + a PEFT LoRA adapter + TRL `GRPOTrainer`
+    (`loss_type="dapo"`, `epsilon=0.2`, `epsilon_high=0.28`, `mask_truncated_completions=True`,
+    `beta=0.0`) + soft overlong punishment + the dynamic-sampling curation pass. No
+    unsloth/bitsandbytes — a 48GB card fits the 8B in bf16, which keeps deps reproducible.
+- **Environment**: a rented ~24–48 GB GPU (A40 recommended, est. $8–15 total). `uv sync --extra rl
+  --extra eval` on that box only; code must not assume local CUDA. Full infra walkthrough:
+  [docs/phase4-runpod-guide.md](docs/phase4-runpod-guide.md).
+- **Done when**: the GPU run completes (collect → judge → train PRM → DAPO → merge/GGUF), a trained
+  Planner checkpoint is saved, and the reward curve climbs sanely.
 
 ## Phase 5 — Episodic memory (Qdrant) 🟡 stretch
 - **Goal**: cross-episode memory behind the existing `Memory` interface — retrieve hints from past

@@ -1,13 +1,14 @@
 """DAPO training of the Planner — the headline contribution.
 
 Step-level DAPO (Decoupled Clip + Dynamic Sampling Policy Optimization),
-PRM-guided. The policy is Qwen3-8B (4-bit QLoRA via unsloth); the reward is the
-trained PRM. TRL 1.4's GRPOTrainer with `loss_type="dapo"` provides clip-higher,
+PRM-guided. The policy is Qwen3-8B in bf16 + a LoRA adapter (PEFT); the reward is
+the trained PRM. TRL's GRPOTrainer with `loss_type="dapo"` provides clip-higher,
 token-level loss, and overlong filtering; dynamic sampling is our own
 (train/dynamic_sampling.py — TRL does not implement it).
 
-Runs on the GPU box (the `rl` extra: torch + transformers + trl + unsloth).
-Heavy imports are deferred into `main` so the module imports without them.
+Runs on the GPU box (the `rl` extra: torch + transformers + trl + peft). A 48GB
+card fits the 8B in bf16 + LoRA without quantization. Heavy imports are deferred
+into `main` so the module imports without them.
 
     uv run python -m train.dapo --prm artifacts/prm --runs "runs/eval_aime_train_*.json"
 """
@@ -66,9 +67,10 @@ def main(
 ):
     import torch
     from datasets import Dataset
+    from peft import LoraConfig
+    from transformers import AutoModelForCausalLM, AutoTokenizer
     from trl import GRPOConfig, GRPOTrainer
     from trl.rewards import get_soft_overlong_punishment
-    from unsloth import FastLanguageModel
 
     from train.dynamic_sampling import curate_prompts
     from train.prm import PRM
@@ -79,22 +81,24 @@ def main(
         raise SystemExit(f"No prompts from {runs!r} — run the trajectory collection first.")
     print(f"{len(rows)} unique Planner states")
 
-    # --- policy: Qwen3-8B, 4-bit QLoRA (unsloth) ---
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=base_model,
-        max_seq_length=2048,
-        load_in_4bit=True,
-        fast_inference=True,        # vLLM-backed rollouts, colocated
-        max_lora_rank=lora_rank,
-        gpu_memory_utilization=0.6,  # shares the 24GB with training; lower on OOM
+    # --- policy: Qwen3-8B in bf16 + a LoRA adapter (PEFT) ---
+    # A 48GB card (A40) fits the 8B in bf16 plus LoRA without quantization, so no
+    # bitsandbytes/unsloth — fewer, more reproducible deps. TRL wraps the model
+    # with `peft_config` below; we keep a handle for the dynamic-sampling pass.
+    tokenizer = AutoTokenizer.from_pretrained(base_model)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        base_model, torch_dtype=torch.bfloat16, attn_implementation="eager",
     )
-    model = FastLanguageModel.get_peft_model(
-        model,
+    if torch.cuda.is_available():
+        model = model.to("cuda")
+    peft_config = LoraConfig(
         r=lora_rank,
         lora_alpha=lora_rank,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
                         "gate_proj", "up_proj", "down_proj"],
-        use_gradient_checkpointing="unsloth",
+        task_type="CAUSAL_LM",
     )
 
     # --- reward: the trained PRM (process reward) + DAPO soft overlong punishment ---
@@ -140,8 +144,9 @@ def main(
         max_steps=train_steps,
         logging_steps=5,
         save_steps=train_steps,
-        optim="paged_adamw_8bit",
+        optim="adamw_torch",
         bf16=True,
+        gradient_checkpointing=True,
         report_to="none",
     )
     trainer = GRPOTrainer(
@@ -150,13 +155,17 @@ def main(
         reward_funcs=reward_funcs,
         args=args,
         train_dataset=dataset,
+        peft_config=peft_config,   # TRL wraps the policy as a LoRA model
     )
     trainer.train()
 
-    # Merge LoRA and export GGUF so the trained Planner loads straight into Ollama
-    # for the after-training eval. (unsloth API — verify on the GPU box.)
-    model.save_pretrained_merged(out, tokenizer, save_method="merged_16bit")
-    print(f"trained Planner saved -> {out}")
+    # Save the LoRA adapter, then merge it into the base weights (bf16) and save a
+    # standalone model so it can be converted to GGUF for the after-training eval.
+    trainer.save_model(out)                                    # the LoRA adapter
+    merged = trainer.model.merge_and_unload()
+    merged.save_pretrained(f"{out}-merged", safe_serialization=True)
+    tokenizer.save_pretrained(f"{out}-merged")
+    print(f"adapter -> {out}  |  merged bf16 model -> {out}-merged")
 
 
 if __name__ == "__main__":
