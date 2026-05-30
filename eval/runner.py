@@ -1,5 +1,7 @@
 import json
 import os
+import signal
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from time import perf_counter
 from typing import TYPE_CHECKING
@@ -17,6 +19,47 @@ if TYPE_CHECKING:
     from core.solver import Solver
 
 console = Console()
+
+
+class _TaskTimeout(BaseException):
+    """Raised when a single task exceeds its wall-clock budget.
+
+    Deliberately a BaseException, not Exception: the broad `except Exception`
+    blocks inside the tools (e.g. `python_exec.run_python`), planner, and
+    verifier must NOT swallow it — it has to propagate up to the per-task
+    handler in `run_eval` so the hung problem is abandoned, not silently
+    turned into a tool-level "Error: ..." string that lets the loop crawl on.
+    """
+
+
+@contextmanager
+def _time_limit(seconds: float):
+    """Abort the wrapped block after `seconds` via SIGALRM.
+
+    Catches the dominant hang on this stack: a small model emitting a `code`
+    action with an infinite / brute-force loop, which `run_python`'s bare
+    `exec()` would otherwise run forever. A hang buried in a C extension
+    (numpy/sympy) may not interrupt until the C call returns — acceptable; the
+    common pure-Python loop is interrupted at the bytecode boundary.
+
+    SIGALRM is POSIX-only (Linux pod + macOS dev box) and must be armed on the
+    main thread, which is where `run_eval` runs. On platforms without SIGALRM,
+    or when `seconds <= 0`, this is a no-op.
+    """
+    if seconds <= 0 or not hasattr(signal, "SIGALRM"):
+        yield
+        return
+
+    def _handler(signum, frame):
+        raise _TaskTimeout()
+
+    old_handler = signal.signal(signal.SIGALRM, _handler)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 class EvalResult(BaseModel):
@@ -50,6 +93,7 @@ def run_eval(
     tasks: list[Task],
     benchmark: str,
     limit: int | None = None,
+    task_timeout_s: float = 300.0,
 ) -> EvalReport:
     subset = tasks[:limit] if limit is not None else tasks
     results: list[EvalResult] = []
@@ -72,8 +116,9 @@ def run_eval(
                 progress.update(bar, description=f"[cyan]{_id}[/cyan] step {step}/{max_steps}")
 
             try:
-                r = solver.solve(t.question, on_step=on_step)
-                correct = score(t, r.answer)
+                with _time_limit(task_timeout_s):
+                    r = solver.solve(t.question, on_step=on_step)
+                    correct = score(t, r.answer)
                 elapsed = perf_counter() - started
                 result = EvalResult(
                     id=t.id,
@@ -85,18 +130,27 @@ def run_eval(
                     trajectory=r.trajectory,
                     elapsed_seconds=elapsed,
                 )
-            except Exception as e:
+            except (_TaskTimeout, Exception) as e:
                 elapsed = perf_counter() - started
+                # Salvage whatever the solver completed before the hang — the
+                # steps already in memory are still useful PRM/DAPO data; only
+                # the offending (hung) step is missing.
+                partial = list(getattr(solver.memory, "entries", []))
+                err = (
+                    f"task timed out after {task_timeout_s:.0f}s"
+                    if isinstance(e, _TaskTimeout)
+                    else str(e)
+                )
                 result = EvalResult(
                     id=t.id,
                     question=t.question,
                     predicted="",
                     gold=t.gold,
                     correct=False,
-                    steps_taken=0,
-                    trajectory=[],
+                    steps_taken=len(partial),
+                    trajectory=partial,
                     elapsed_seconds=elapsed,
-                    error=str(e),
+                    error=err,
                 )
             results.append(result)
             mark = "[green]✓[/green]" if result.correct else "[red]✗[/red]"

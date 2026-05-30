@@ -18,6 +18,10 @@ def main(
     limit: int | None = typer.Option(None, "--limit", "-l", help="Evaluate only the first N tasks"),
     temperature: float = typer.Option(0.0, "--temperature", "-t"),
     think: bool = typer.Option(False, "--think", help="Enable Qwen thinking tokens; slower, default off"),
+    task_timeout: float = typer.Option(
+        300.0, "--task-timeout",
+        help="Per-problem wall-clock budget (s); abandons a hung problem and moves on. 0 disables.",
+    ),
 ):
     if benchmark == "aime24":
         tasks = load_aime24()
@@ -37,7 +41,7 @@ def main(
         verbose=False,
         think=think,
     )
-    run_eval(solver, tasks, benchmark=benchmark, limit=limit)
+    run_eval(solver, tasks, benchmark=benchmark, limit=limit, task_timeout_s=task_timeout)
 
 
 if __name__ == "__main__":
