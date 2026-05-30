@@ -100,10 +100,18 @@ uv run python -m eval.run --benchmark gpqa --max-steps 6
 ## 4. Collect training trajectories (~1 h)
 
 ```bash
-uv run python -m eval.run --benchmark aime_train --limit 150 --max-steps 6
+uv run python -m eval.run --benchmark aime_train --limit 150 --max-steps 6 \
+    --task-timeout 180 2>&1 | tee collect.log
 ```
 → `runs/eval_aime_train_*.json` — the trajectory corpus for the PRM and DAPO.
 (Trains on AIME 1983–2023, never on the AIME24/GPQA test sets.)
+
+`--task-timeout 180` is important: a small policy occasionally emits a `code`
+action with an infinite/brute-force loop, which the sandbox's `exec()` would
+otherwise run forever, stalling the whole collection. The runner abandons any
+problem exceeding the budget (logged as `ERR: task timed out after Ns`), keeps
+its partial trajectory, and moves on. Healthy problems finish in <60s on an A40,
+so 180s is ~3× headroom; raise it if you see legitimate problems being cut off.
 
 ## 5. Judge the steps → PRM labels (~10–20 min, DeepSeek API)
 
