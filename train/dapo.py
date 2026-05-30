@@ -138,7 +138,10 @@ def main(
         num_generations=num_generations,
         per_device_train_batch_size=num_generations,
         gradient_accumulation_steps=4,
-        max_prompt_length=1024,
+        # NB: TRL 1.5.1's GRPOConfig dropped `max_prompt_length` — only
+        # `max_completion_length` remains. Our prompts are bounded already
+        # (train.data._format_context caps each prior step at 200 chars), so
+        # there is nothing to truncate on the prompt side.
         max_completion_length=1024,
         learning_rate=1e-6,
         max_steps=train_steps,
