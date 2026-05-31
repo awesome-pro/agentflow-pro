@@ -141,24 +141,29 @@ climb in the logs. If you hit OOM: lower `--num-generations` (e.g. 4), or
 ## 8. Export to GGUF + load into Ollama
 
 The merged bf16 model must become a GGUF so Ollama can serve it for the re-eval.
-We use llama.cpp's converter (no unsloth):
+This whole step is scripted — just run it:
 
 ```bash
-# one-time: get llama.cpp's conversion script
-git clone --depth 1 https://github.com/ggml-org/llama.cpp /workspace/llama.cpp
-uv pip install -r /workspace/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+bash export_planner.sh
+```
 
-# convert the merged model -> GGUF (q4_k_m), then register it with Ollama
+What it does (and the two things that matter):
+
+```bash
+# convert merged bf16 model -> f16 GGUF. NOTE: convert_hf_to_gguf.py's --outtype is
+# f32/f16/bf16/q8_0/auto — NOT k-quants. Q4_K_M is applied by Ollama in `create`.
 uv run python /workspace/llama.cpp/convert_hf_to_gguf.py artifacts/planner-dapo-merged \
-    --outfile artifacts/planner.gguf --outtype q4_k_m
+    --outfile artifacts/planner-f16.gguf --outtype f16
 
-# IMPORTANT: inherit qwen3:8b's chat template + stop params, only swap the weights.
-# A bare `FROM planner.gguf` would drop the Qwen3 template and the agent would
-# mis-parse every Planner JSON at re-eval time.
+# (1) inherit qwen3:8b's chat template + stop params, only swap the weights — a bare
+#     `FROM planner.gguf` would drop the Qwen3 template and the agent would mis-parse
+#     every Planner JSON at re-eval time.
 ollama show qwen3:8b --modelfile | grep -vE '^FROM ' > Modelfile.tmpl
-printf 'FROM ./artifacts/planner.gguf\n' | cat - Modelfile.tmpl > Modelfile
-ollama create agentflow-planner -f Modelfile
-ollama run agentflow-planner "hi" --verbose   # smoke-test it loads + responds
+printf 'FROM ./artifacts/planner-f16.gguf\n' | cat - Modelfile.tmpl > Modelfile
+
+# (2) quantize to Q4_K_M IN `create` so the trained model matches the baseline
+#     qwen3:8b's quantization — before/after then differ only by training.
+ollama create agentflow-planner --quantize q4_K_M -f Modelfile
 ```
 
 ## 9. Re-evaluate — the "after" numbers
