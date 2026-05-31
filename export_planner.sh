@@ -17,9 +17,13 @@ echo "==> 0. sanity: the merged model must exist"
 test -d "$MERGED" || { echo "ERROR: $MERGED not found — did DAPO finish and save?"; exit 1; }
 ls -lh "$MERGED" | head
 
-echo "==> 1. llama.cpp converter"
+echo "==> 1. llama.cpp converter + only the deps it needs"
 [ -d /workspace/llama.cpp ] || git clone --depth 1 https://github.com/ggml-org/llama.cpp /workspace/llama.cpp
-uv pip install -q -r /workspace/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+# Do NOT install llama.cpp's requirements file: it pins transformers==5.x, which
+# conflicts with our <5 pin and isn't on our index. The converter only needs these
+# three on top of the torch + transformers 4.57 already in the venv (4.57 fully
+# supports Qwen3, so the converter reads the model config/tokenizer fine).
+uv pip install -q gguf sentencepiece protobuf
 
 echo "==> 2. convert merged bf16 model -> f16 GGUF (this reads the 8B; ~2-5 min)"
 uv run python /workspace/llama.cpp/convert_hf_to_gguf.py "$MERGED" --outfile "$GGUF" --outtype f16
