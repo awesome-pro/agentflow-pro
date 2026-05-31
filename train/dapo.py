@@ -89,7 +89,11 @@ def main(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
-        base_model, torch_dtype=torch.bfloat16, attn_implementation="eager",
+        # sdpa (PyTorch's fused scaled-dot-product attention) is 3-4x faster than
+        # eager for both the rollout generation and training — eager materialises
+        # the full attention matrix and made the dynamic-sampling pass crawl. `dtype`
+        # replaces the now-deprecated `torch_dtype` kwarg.
+        base_model, dtype=torch.bfloat16, attn_implementation="sdpa",
     )
     if torch.cuda.is_available():
         model = model.to("cuda")
@@ -115,7 +119,11 @@ def main(
                 row["prompt"], tokenize=False, add_generation_prompt=True)
             enc = tokenizer([text] * n, return_tensors="pt", padding=True).to(model.device)
             with torch.no_grad():
-                out = model.generate(**enc, max_new_tokens=512, do_sample=True,
+                # 256 is plenty for curation: a valid Planner JSON action is short
+                # and emits EOS well before this; the cap only truncates runaway
+                # rambling (which would be invalid JSON and dropped anyway), so it
+                # speeds up the pass with negligible effect on the signal estimate.
+                out = model.generate(**enc, max_new_tokens=256, do_sample=True,
                                      temperature=1.0, top_p=0.95)
             gen = out[:, enc["input_ids"].shape[1]:]
             return tokenizer.batch_decode(gen, skip_special_tokens=True)

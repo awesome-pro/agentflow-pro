@@ -50,6 +50,6 @@ def curate_prompts(
         # Early visibility into the valid-JSON / reward-variance rate: if the
         # untrained policy almost never produces informative groups, the kept
         # count stays flat and you can stop early rather than wait for all N.
-        if idx % 25 == 0 or idx == total:
+        if idx % 10 == 0 or idx == total:
             print(f"  dynamic sampling: {idx}/{total} scanned, kept {len(kept)}", flush=True)
     return kept
