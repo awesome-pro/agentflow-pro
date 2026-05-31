@@ -38,7 +38,8 @@ def curate_prompts(
     Returns the informative subset, in order.
     """
     kept: list[dict] = []
-    for row in prompts:
+    total = len(prompts)
+    for idx, row in enumerate(prompts, 1):
         completions = generate(row, num_generations)
         columns = {k: [v] * len(completions) for k, v in row.items() if k != "prompt"}
         rewards = reward_fn(completions=completions, **columns)
@@ -46,4 +47,9 @@ def curate_prompts(
             kept.append(row)
             if keep is not None and len(kept) >= keep:
                 break
+        # Early visibility into the valid-JSON / reward-variance rate: if the
+        # untrained policy almost never produces informative groups, the kept
+        # count stays flat and you can stop early rather than wait for all N.
+        if idx % 25 == 0 or idx == total:
+            print(f"  dynamic sampling: {idx}/{total} scanned, kept {len(kept)}", flush=True)
     return kept

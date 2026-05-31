@@ -110,6 +110,8 @@ class PRM:
 
     def score(self, texts: list[str]) -> list[float]:
         """Score a batch of build_prm_input() strings — each clamped to [0,1]."""
+        if not texts:
+            return []
         enc = self._tok(
             texts, truncation=True, max_length=_MAX_LEN, padding=True, return_tensors="pt",
         ).to(self._device)

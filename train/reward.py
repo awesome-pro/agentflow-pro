@@ -43,20 +43,27 @@ def make_prm_reward(prm, build_input: Callable) -> Callable:
         problems = problem if problem is not None else [""] * n
         contexts = context if context is not None else [""] * n
 
-        texts: list[str] = []
-        valid: list[bool] = []
-        for comp, prob, ctx in zip(completions, problems, contexts):
+        # Only score the VALID completions. Malformed ones (non-JSON, missing
+        # fields, unknown action) get a forced 0.0 and are never sent to the PRM.
+        # Crucial: feeding empty placeholder strings to the PRM tokenizer yields
+        # input_ids of shape [k, 0] when an entire group is malformed (common
+        # early in training / during dynamic sampling, when the untrained policy
+        # rarely emits valid Planner JSON), which crashes the model's forward.
+        valid_texts: list[str] = []
+        valid_pos: list[int] = []
+        for i, (comp, prob, ctx) in enumerate(zip(completions, problems, contexts)):
             data = _parse_action(_completion_text(comp))
-            if data is None:
-                texts.append("")          # placeholder; reward forced to 0 below
-                valid.append(False)
-            else:
-                texts.append(build_input(prob, ctx, data["thought"],
-                                         data["action"], data["action_input"]))
-                valid.append(True)
+            if data is not None:
+                valid_texts.append(build_input(prob, ctx, data["thought"],
+                                               data["action"], data["action_input"]))
+                valid_pos.append(i)
 
-        scores = prm.score(texts)
-        return [s if ok else 0.0 for s, ok in zip(scores, valid)]
+        rewards = [0.0] * n
+        if valid_texts:
+            scores = prm.score(valid_texts)
+            for i, s in zip(valid_pos, scores):
+                rewards[i] = s
+        return rewards
 
     prm_reward.__name__ = "prm_reward"
     return prm_reward
