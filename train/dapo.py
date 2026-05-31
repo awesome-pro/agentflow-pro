@@ -115,8 +115,13 @@ def main(
     # --- DAPO dynamic sampling — our own pre-training curation pass ---
     if dynamic_sampling:
         def generate(row: dict, n: int) -> list[str]:
+            # enable_thinking=False matches inference (the Planner runs think-off):
+            # otherwise Qwen3 emits a long <think> block that eats the token budget
+            # before any JSON, so the reward can't parse an action and every group
+            # collapses to zero reward variance ("kept 0" — dropped).
             text = tokenizer.apply_chat_template(
-                row["prompt"], tokenize=False, add_generation_prompt=True)
+                row["prompt"], tokenize=False, add_generation_prompt=True,
+                enable_thinking=False)
             enc = tokenizer([text] * n, return_tensors="pt", padding=True).to(model.device)
             with torch.no_grad():
                 # Match the original curation length (512) so a long but valid
@@ -143,6 +148,10 @@ def main(
         epsilon=0.2, epsilon_high=0.28,    # clip-higher (decoupled clipping)
         mask_truncated_completions=True,   # overlong filtering
         beta=0.0,                          # no KL term (DAPO)
+        # TRL renders the prompt with the chat template before generating; disable
+        # Qwen3 thinking there too so training rollouts are clean JSON (match the
+        # think-off inference Planner and the curation pass above).
+        chat_template_kwargs={"enable_thinking": False},
         num_generations=num_generations,
         per_device_train_batch_size=num_generations,
         gradient_accumulation_steps=4,

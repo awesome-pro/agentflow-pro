@@ -8,6 +8,8 @@ The reward is the PRM's score of the Planner's generated action; a malformed
 import json
 from typing import Callable
 
+from core.planner import _strip_markdown, _strip_think_tags
+
 _VALID_ACTIONS = {"think", "search", "code", "answer"}
 
 
@@ -20,9 +22,16 @@ def _completion_text(completion) -> str:
 
 
 def _parse_action(text: str) -> dict | None:
-    """Parse a generated Planner completion into {thought, action, action_input}."""
+    """Parse a generated Planner completion into {thought, action, action_input}.
+
+    Parse exactly the way core.planner.Planner does at inference: strip any
+    <think>…</think> block and a markdown code fence before json.loads. Without
+    this, a completion whose JSON is merely wrapped in thinking/markdown (the
+    norm for an untrained policy) is wrongly scored 0.0 — which collapses reward
+    variance and makes dynamic sampling drop every prompt.
+    """
     try:
-        data = json.loads(text)
+        data = json.loads(_strip_markdown(_strip_think_tags(text)))
     except Exception:
         return None
     if not all(k in data for k in ("thought", "action", "action_input")):
