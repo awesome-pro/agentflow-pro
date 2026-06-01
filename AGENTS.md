@@ -68,7 +68,7 @@ pyproject.toml  deps: httpx openai pydantic rich typer python-dotenv tavily-pyth
                 extras: tools=[fastmcp] · eval=[datasets, math-verify] · memory=[qdrant-client,
                 sentence-transformers] · rl=[transformers<5, trl, peft, torch, accelerate, datasets]
                 · dev=[pytest, pytest-asyncio].
-train/          DAPO + PRM training (BUILT — Phase 4 GPU run pending). data.py (shared plumbing +
+train/          DAPO + PRM training (BUILT + Phase 4 run complete). data.py (shared plumbing +
                 build_prm_input single-source-of-truth) · judge.py (DeepSeek LLM-judge labeling) ·
                 prm.py (Qwen3-0.6B regression PRM) · reward.py (PRM→TRL reward) · dynamic_sampling.py
                 (the DAPO piece TRL lacks) · dapo.py (Qwen3-8B bf16 + PEFT LoRA + TRL GRPOTrainer).
@@ -118,11 +118,12 @@ memory allows; **RL training needs a rented ~24 GB GPU** (e.g. RunPod RTX 4090).
 ## Status & what's next
 
 Phases 0–2 (scaffold · core loop · real tools), the eval harness, and the **full DAPO + PRM training
-pipeline** (`train/`) are **built and committed**. The **AIME24 baseline is recorded — 33.3%
-(10/30)**. What remains is the **Phase 4 GPU run**: on a rented GPU, collect trajectories on the AIME
-training split → LLM-judge labels → train the PRM → DAPO-train the Planner → export GGUF → re-eval
-AIME24/GPQA for the "after" numbers. Walkthrough: **[docs/phase4-runpod-guide.md](docs/phase4-runpod-guide.md)**;
-plan and acceptance criteria: **[ROADMAP.md](ROADMAP.md)**.
+pipeline** (`train/`) are **built and committed**, and the **Phase 4 GPU run is complete**. Both
+baselines and trained-model numbers are recorded: **AIME24 33.3%→30.0%** (flat within noise, n=30) and
+**GPQA 40.0%→45.0% (+5 pts, cross-domain)**. The trained Planner was served via Ollama at the same
+Q4_K_M quant as the baseline; reports + analysis in **[results/](results/README.md)** and
+**[docs/research.md](docs/research.md)**.
 
-**Definition of done for the project**: baseline eval numbers → train the Planner (DAPO + PRM) →
-re-eval → report the base→trained delta in `docs/research.md` and the README table.
+**Definition of done — met**: baseline eval numbers → trained the Planner (DAPO + PRM) → re-evaled →
+base→trained delta reported in `docs/research.md`, `results/README.md`, and the README table. Optional
+next: Phase 5 (Qdrant memory), more training (more steps / stronger PRM / vLLM) for larger gains.

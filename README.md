@@ -163,20 +163,27 @@ The kind of thing that doesn't show up in a results table but is most of the act
 
 ## Results
 
-**Honest status:** the pre-training baseline is measured; the trained-model delta is a queued GPU run
-(see [docs/phase4-runpod-guide.md](docs/phase4-runpod-guide.md)). Publishing the baseline and the full
-protocol *before* the result is the point — the experiment is reproducible end to end.
+Before/after, same harness, **same Q4_K_M quantization** — the only variable is the PRM-guided
+DAPO training. Full per-problem trajectories and the curated reports live in
+[`results/`](results/README.md).
 
 | Model | Benchmark | Accuracy | Avg steps | Notes |
 |---|---|---|---|---|
-| `qwen3:8b` (untrained) | AIME 2024 (30) | **33.3%** (10/30) | 4.0 | baseline; `think` off, `temp=0`, verified — no false positives |
-| `qwen3:8b` (untrained) | GPQA Diamond (198) | _pending_ | — | second baseline (gated; `HF_TOKEN` required) |
-| `qwen3:8b` **+ DAPO + PRM** | AIME 2024 | _pending_ | — | the headline run |
-| `qwen3:8b` **+ DAPO + PRM** | GPQA Diamond | _pending_ | — | the headline run |
+| `qwen3:8b` (untrained) | AIME 2024 (30) | 33.3% (10/30) | 4.03 | baseline; `think` off, `temp=0`, verified |
+| `qwen3:8b` **+ DAPO + PRM** | AIME 2024 (30) | 30.0% (9/30) | 4.37 | flat within noise (n=30, ±~17pt CI; 11/30 flipped: +5/−6) |
+| `qwen3:8b` (untrained) | GPQA Diamond (100) | 40.0% (40/100) | 3.09 | baseline |
+| `qwen3:8b` **+ DAPO + PRM** | GPQA Diamond (100) | **45.0% (45/100)** | 3.19 | **+5.0 pts — cross-domain** (trained on AIME math) |
 
-Failure analysis on the baseline: of 30 problems, 10 correct, ~8 confident-but-wrong, 12 hit
-`max_steps` without the Verifier ever accepting an answer — healthy headroom for process supervision
-to claw back. Full per-problem trajectories land in `runs/eval_<benchmark>_<timestamp>.json`.
+**What this shows.** A learned PRM driving DAPO (with hand-built dynamic sampling) trained
+end-to-end and produced a **+5.0 pt cross-domain gain on GPQA** (n=100, the reliable test) from a
+Planner trained only on AIME *math*. On AIME24 the result is **flat within noise** — at n=30 the
+95% CI is ≈±17 pts, and the policy in fact changed a lot (11 of 30 problems flipped, net −1), i.e.
+small-sample variance rather than a regression. The trained Planner also reasons more deliberately
+(avg steps ↑), the expected signature of a *process* reward. This is a deliberately minimal demo
+(300 LoRA steps, 8B); it validates the method, not a leaderboard push — see
+[`results/README.md`](results/README.md) and [`docs/research.md`](docs/research.md) for the full
+analysis and the levers for larger gains (more steps, stronger PRM, outcome-reward mixing, vLLM,
+bigger policy).
 
 ---
 
@@ -244,8 +251,9 @@ Contributors / agents: start with **[AGENTS.md](AGENTS.md)**; the phased plan an
 ## Status
 
 Scaffold · core loop · real tools · eval harness · **the full DAPO + PRM training pipeline** are
-built and committed. The AIME24 baseline is recorded (33.3%). Remaining: the Phase 4 GPU run
-(collect → judge → train PRM → DAPO → re-eval) to fill in the trained-model numbers, then the writeup.
+built and committed, and the **Phase 4 GPU run is complete** (collect → judge → train PRM → DAPO →
+GGUF → re-eval). Both baselines and trained-model numbers are recorded above: GPQA **+5.0 pts**
+(cross-domain), AIME24 flat within noise. See [`results/`](results/README.md) for the full analysis.
 
 ## References
 

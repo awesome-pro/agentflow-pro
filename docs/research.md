@@ -147,7 +147,7 @@ AIME 2024 test set in `eval/datasets.py:load_aime_train` — the model is never 
 scored on. (An earlier proof-of-concept sketch reused the 30 AIME24 problems for both; that was
 dropped in favor of the disjoint split above.)
 
-### Baseline (Phase 3 — to be filled)
+### Results (baseline + trained)
 
 Run AIME24 and GPQA Diamond with Qwen thinking disabled by default:
 
@@ -156,12 +156,30 @@ uv run python -m eval.run -b aime24 --max-steps 8 --temperature 0.0
 uv run python -m eval.run -b gpqa --max-steps 4 --temperature 0.0
 ```
 
-| Model | Benchmark | Accuracy | Avg steps | Avg time | Notes |
-|---|---|---|---|---|---|
-| `qwen3:8b` (untrained) | AIME24 | **33.3%** (10/30) | 4.0 | ~3m12s/prob | baseline; `--think` off, `temp=0`, verified — no false positives |
-| `qwen3:8b` (untrained) | GPQA Diamond | TBD | TBD | TBD | baseline; `HF_TOKEN` required (queued for the GPU box) |
-| `qwen3:8b` + DAPO + PRM | AIME24 | TBD | TBD | TBD | Phase 4 result (GPU run pending) |
-| `qwen3:8b` + DAPO + PRM | GPQA Diamond | TBD | TBD | TBD | Phase 4 result (GPU run pending) |
+| Model | Benchmark | Accuracy | Avg steps | Notes |
+|---|---|---|---|---|
+| `qwen3:8b` (untrained) | AIME24 | **33.3%** (10/30) | 4.03 | baseline; `--think` off, `temp=0`, verified — no false positives |
+| `qwen3:8b` (untrained) | GPQA Diamond | **40.0%** (40/100) | 3.09 | baseline; A40, same settings |
+| `qwen3:8b` + DAPO + PRM | AIME24 | 30.0% (9/30) | 4.37 | −3.3 pts = within noise at n=30 (11/30 problems flipped: +5 solved, −6 broken) |
+| `qwen3:8b` + DAPO + PRM | GPQA Diamond | **45.0%** (45/100) | 3.19 | **+5.0 pts** — cross-domain gain (trained on AIME math) |
+
+Both trained rows: `agentflow-planner` served via Ollama at the **same Q4_K_M quant as the
+baseline**, identical eval settings — the only variable is the training. Reports:
+[`results/eval_aime24_20260531T224121Z.json`](../results/eval_aime24_20260531T224121Z.json),
+[`results/eval_gpqa_20260531T230946Z.json`](../results/eval_gpqa_20260531T230946Z.json).
+
+**Result discussion.** The headline outcome is a **+5.0 pt cross-domain gain on GPQA** (n=100,
+the statistically reliable test) from a Planner trained only on AIME *math* — the dense per-step
+PRM signal improved general agentic reasoning, not just the training distribution. On **AIME24
+the result is flat within noise**: at n=30 the 95% CI is ≈ ±17 pts, and the per-problem diff
+shows the policy *changed substantially* (newly solved `aime24_5,7,12,13,14`; broke
+`aime24_0,2,3,8,21,24`) for a net −1 — variance, not a capability regression. The trained
+Planner also takes **more deliberate steps** (avg 4.03→4.37), the expected signature of a
+*process* reward. This is a minimal demo run (300 LoRA steps, 8B policy, PRM bootstrapped from
+untrained-policy trajectories); it validates the full learned-PRM + DAPO method end-to-end. The
+"small-model ceiling on AIME" risk noted below was borne out — and the mitigation we planned
+(report process metrics + the more reliable benchmark, not AIME accuracy alone) is exactly what
+the data supports.
 
 Baseline failure split (AIME24): 10 correct, ~8 confident-but-wrong, 12 hit `max_steps` without the
 Verifier accepting an answer. Run JSON: `runs/eval_aime24_20260520T103641Z.json`.

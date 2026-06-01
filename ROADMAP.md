@@ -11,8 +11,8 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
 | 0 | Scaffold | ✅ |
 | 1 | Core solver loop | ✅ |
 | 2 | Real tools (MCP + Tavily + sandboxed exec) | ✅ |
-| 3 | Eval harness + **baseline numbers** | 🔵 (harness done; AIME24 baseline = 33.3%, GPQA pending) |
-| 4 | **DAPO + PRM — RL training** | 🔵 (full pipeline built & committed; GPU run pending) |
+| 3 | Eval harness + **baseline numbers** | ✅ (AIME24 33.3%, GPQA 40.0%) |
+| 4 | **DAPO + PRM — RL training** | ✅ (trained & re-evaled: GPQA 40→45, AIME24 flat-in-noise) |
 | 5 | Episodic memory (Qdrant) | 🟡 |
 | 6 | Report & polish | ⏳ |
 
@@ -56,7 +56,7 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
   (no false positives). GPQA Diamond baseline queued for the GPU box. AIME *training* split loader
   (`load_aime_train`, 918 problems, Year ≤ 2023, de-duplicated vs AIME24) also shipped here.
 
-## Phase 4 — DAPO + PRM (RL training) 🔵 **code done; GPU run pending**
+## Phase 4 — DAPO + PRM (RL training) ✅ **complete (trained + re-evaled)**
 - **Goal**: LoRA-train the Planner with **DAPO** (decoupled clip + dynamic sampling) and a **learned
   Process Reward Model** (step-level credit). Design: [docs/research.md](docs/research.md).
 - **What shipped** (the actual layout — `train/`, not the originally-sketched `rl/`):
@@ -79,8 +79,10 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
 - **Environment**: a rented ~24–48 GB GPU (A40 recommended, est. $8–15 total). `uv sync --extra rl
   --extra eval` on that box only; code must not assume local CUDA. Full infra walkthrough:
   [docs/phase4-runpod-guide.md](docs/phase4-runpod-guide.md).
-- **Done when**: the GPU run completes (collect → judge → train PRM → DAPO → merge/GGUF), a trained
-  Planner checkpoint is saved, and the reward curve climbs sanely.
+- **Done** ✅: full GPU run completed on an A40 (collect 150 → judge 531 steps → train PRM, eval-MAE
+  0.16 → DAPO 300 steps, kept 493/531 informative prompts → merge → GGUF → Ollama at Q4_K_M →
+  re-eval). Result: **GPQA 40.0→45.0% (+5 pts, cross-domain)**; AIME24 33.3→30.0% (flat within noise,
+  n=30). Reports + analysis in [results/](results/README.md).
 
 ## Phase 5 — Episodic memory (Qdrant) 🟡 stretch
 - **Goal**: cross-episode memory behind the existing `Memory` interface — retrieve hints from past
