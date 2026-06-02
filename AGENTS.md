@@ -32,7 +32,11 @@ core/
   types.py      Pydantic v2 models: Action(Enum: think|search|code|answer), PlannerOutput,
                 ExecutorOutput, VerifierOutput, MemoryEntry, SolverResult. ALL data models live here.
   memory.py     Memory: add(step, plan, result) · to_context() -> str (LLM-readable history) ·
-                entries (property) · clear(). In-task only; Qdrant backend is Phase 5.
+                entries (property) · clear(). In-task only (wiped each solve).
+  episodic.py   EpisodicMemory (Phase 5) — cross-episode store: local on-disk Qdrant +
+                sentence-transformers (all-MiniLM-L6-v2). add_episode / retrieve / to_hints / reset.
+                Solver READS hints; the caller (eval runner / main.py) WRITES after scoring. Lazy
+                imports; only loads under --memory (uv sync --extra memory). Off by default.
   planner.py    Planner.plan(query, memory_context) -> PlannerOutput. OllamaClient call with a Pydantic
                 JSON Schema as `format`, retry-once-then-degrade-to-THINK. Exports _strip_markdown /
                 _strip_think_tags / _RETRY_MSG (verifier reuses them). `think` flag passed to OllamaClient.
@@ -63,7 +67,9 @@ eval/
                 scores, prints a Rich table, saves runs/eval_<benchmark>_<timestamp>.json.
   run.py        Typer CLI: `uv run python -m eval.run -b aime24|gpqa [-m model] [-l N] [-s steps] [-t temp]`.
 
-main.py         Typer CLI: `uv run python main.py "<query>" [-m model] [-s max_steps] [--think]`.
+main.py         Typer CLI: `uv run python main.py "<query>" [-m model] [-s max_steps] [--think] [--memory]`.
+scripts/        seed_memory.py — warm the episodic store from runs/*.json (idempotent;
+                --exclude-benchmark leakage guard). `uv run python -m scripts.seed_memory ...`.
 pyproject.toml  deps: httpx openai pydantic rich typer python-dotenv tavily-python sympy numpy.
                 extras: tools=[fastmcp] · eval=[datasets, math-verify] · memory=[qdrant-client,
                 sentence-transformers] · rl=[transformers<5, trl, peft, torch, accelerate, datasets]
@@ -124,6 +130,12 @@ baselines and trained-model numbers are recorded: **AIME24 33.3%→30.0%** (flat
 Q4_K_M quant as the baseline; reports + analysis in **[results/](results/README.md)** and
 **[docs/research.md](docs/research.md)**.
 
+**Phase 5 (episodic memory) is built and validated** — `core/episodic.py` (local Qdrant +
+sentence-transformers), `--memory` toggle on `main.py`/`eval.run`, `scripts/seed_memory.py`, and
+`tests/test_episodic.py`. Off by default; reported as a capability (leakage-free hints verified
+firing on real AIME24 problems), with an optional same-domain A/B one command away (see
+[docs/research.md](docs/research.md#phase-5--episodic-cross-episode-memory)).
+
 **Definition of done — met**: baseline eval numbers → trained the Planner (DAPO + PRM) → re-evaled →
 base→trained delta reported in `docs/research.md`, `results/README.md`, and the README table. Optional
-next: Phase 5 (Qdrant memory), more training (more steps / stronger PRM / vLLM) for larger gains.
+next: more training (more steps / stronger PRM / vLLM) for larger gains; the Phase-5 A/B run.

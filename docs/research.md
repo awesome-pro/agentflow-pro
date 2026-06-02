@@ -204,6 +204,48 @@ Full step-by-step infra walkthrough: [phase4-runpod-guide.md](phase4-runpod-guid
 
 ---
 
+## Phase 5 — Episodic (cross-episode) memory
+
+The in-task `Memory` is wiped at the start of every solve. Phase 5 adds a **persistent,
+cross-episode** store: after a problem is solved, its *query* and the *strategy that worked* are
+embedded and saved; when a new query arrives, the most semantically-similar past solves are
+retrieved and injected into the Planner's prompt as hints — "here's how you solved something like
+this before."
+
+**Design.**
+- A separate `EpisodicMemory` class (`core/episodic.py`), not an overload of the per-task `Memory`
+  API — the two concerns are different. The **Solver only reads** (retrieves hints once per solve);
+  the **caller writes** the episode *after* scoring, so a problem can never retrieve itself and only
+  solves with a known-correct outcome become future hints (`successful_only=True`).
+- Storage is a **local on-disk Qdrant** (`QdrantClient(path=…)`) — no server, no Docker. Embeddings
+  are `sentence-transformers` `all-MiniLM-L6-v2` (384-d, CPU, cosine). Heavy imports are lazy so the
+  base install stays light; episodic memory only loads under `--memory` (`uv sync --extra memory`).
+- Retrieval is gated by a cosine `min_score` (default 0.45) so unrelated problems surface no hint.
+- **Off by default** everywhere, to keep the recorded baselines and Phase-4 numbers reproducible.
+
+**Toggle.** `--memory` on both `main.py` and `eval.run`; `scripts/seed_memory.py` warms the store
+from existing `runs/*.json` trajectories (idempotent, keyed by a hash of the question).
+
+**Validated locally (CPU, no GPU):** seeded 49 successful AIME *train*-split solves and confirmed
+relevant, leakage-free hints fire on real AIME24 *test* problems (e.g. AIME24 #0 retrieves a
+train log/gcd problem at cosine 0.55), failed solves are never surfaced, and `pytest
+tests/test_episodic.py` (5 tests) passes.
+
+**Optional A/B (one command, user-triggered).** Same-domain transfer — seed from the AIME train
+split (disjoint from AIME24, Year ≤ 2023), then evaluate AIME24 with hints, read-only so the seeded
+store stays fixed:
+
+```bash
+uv run python -m scripts.seed_memory "runs/eval_aime_train_*.json" --exclude-benchmark aime24 --reset
+uv run python -m eval.run -b aime24 -m qwen3:8b -s 6 -t 0 --memory   # --memory-readonly is the default
+# compare accuracy to the memory-OFF baseline (33.3%, 10/30, same config)
+```
+
+This is framed as a **capability**, not an accuracy claim: at n=30 the ~±17pt noise floor can't
+support a small delta, and the headline contribution remains the trained Planner (DAPO + PRM).
+
+---
+
 ## Open questions / risks
 
 | Risk | Mitigation |

@@ -22,6 +22,19 @@ def main(
         300.0, "--task-timeout",
         help="Per-problem wall-clock budget (s); abandons a hung problem and moves on. 0 disables.",
     ),
+    memory: bool = typer.Option(
+        False, "--memory",
+        help="Use cross-episode (Qdrant) memory: inject hints from similar past solves and store each scored solve. Needs `uv sync --extra memory`.",
+    ),
+    memory_path: str = typer.Option(
+        "artifacts/qdrant", "--memory-path",
+        help="On-disk location of the Qdrant episodic store (only used with --memory).",
+    ),
+    memory_readonly: bool = typer.Option(
+        True, "--memory-readonly/--memory-record",
+        help="Read-only: retrieve hints but don't write eval solves back (keeps an A/B's "
+             "seeded store fixed and the experiment reproducible). Default on.",
+    ),
 ):
     if benchmark == "aime24":
         tasks = load_aime24()
@@ -33,6 +46,12 @@ def main(
         typer.echo(f"Unknown benchmark: {benchmark!r}. Choose 'aime24', 'gpqa', or 'aime_train'.")
         raise typer.Exit(1)
 
+    episodic = None
+    if memory:
+        from core.episodic import EpisodicMemory
+        episodic = EpisodicMemory(path=memory_path)
+        typer.echo(f"Episodic memory ON ({memory_path}, {episodic.count()} episodes stored).")
+
     solver = Solver(
         model=model,
         base_url=base_url,
@@ -40,8 +59,12 @@ def main(
         temperature=temperature,
         verbose=False,
         think=think,
+        episodic=episodic,
     )
-    run_eval(solver, tasks, benchmark=benchmark, limit=limit, task_timeout_s=task_timeout)
+    run_eval(
+        solver, tasks, benchmark=benchmark, limit=limit, task_timeout_s=task_timeout,
+        record_episodes=(episodic is not None and not memory_readonly),
+    )
 
 
 if __name__ == "__main__":

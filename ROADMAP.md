@@ -13,7 +13,7 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
 | 2 | Real tools (MCP + Tavily + sandboxed exec) | ✅ |
 | 3 | Eval harness + **baseline numbers** | ✅ (AIME24 33.3%, GPQA 40.0%) |
 | 4 | **DAPO + PRM — RL training** | ✅ (trained & re-evaled: GPQA 40→45, AIME24 flat-in-noise) |
-| 5 | Episodic memory (Qdrant) | 🟡 |
+| 5 | Episodic memory (Qdrant) | ✅ (capability built + validated) |
 | 6 | Report & polish | ⏳ |
 
 ---
@@ -84,13 +84,27 @@ Legend: ✅ done · 🔵 partly done · ⏳ next · 🟡 stretch
   re-eval). Result: **GPQA 40.0→45.0% (+5 pts, cross-domain)**; AIME24 33.3→30.0% (flat within noise,
   n=30). Reports + analysis in [results/](results/README.md).
 
-## Phase 5 — Episodic memory (Qdrant) 🟡 stretch
-- **Goal**: cross-episode memory behind the existing `Memory` interface — retrieve hints from past
-  solves and inject them into the planner's context.
-- **Files**: `core/memory.py` (add a Qdrant-backed implementation behind the same API), embedding via
-  `sentence-transformers`; `--memory` toggle on the CLIs. Deps: `uv sync --extra memory`.
-- **Done when**: retrieved past-episode hints visibly appear in the planner prompt and can be toggled
-  off.
+## Phase 5 — Episodic memory (Qdrant) ✅ **capability built + validated**
+- **Goal**: cross-episode memory — retrieve hints from past solves and inject them into the planner's
+  context.
+- **What shipped**:
+  - `core/episodic.py` — `EpisodicMemory`: local on-disk Qdrant + `sentence-transformers`
+    (`all-MiniLM-L6-v2`, CPU, cosine). `add_episode()` / `retrieve()` / `to_hints()` / `reset()`.
+    A **separate** class from the per-task `Memory` (different concern): the Solver only *reads*
+    hints; the caller *writes* the episode after scoring, so a problem never retrieves itself and
+    only known-correct solves become future hints. Lazy heavy imports keep the base install light.
+  - `core/solver.py` — `Solver(episodic=…)` retrieves hints once per solve and injects them;
+    `core/planner.py` — `plan(..., hints=…)` prepends a guidance block.
+  - `--memory` toggle on `main.py` and `eval.run` (off by default, so baselines stay reproducible);
+    `--memory-readonly` (default) keeps a seeded store fixed during an eval.
+  - `scripts/seed_memory.py` — warm the store from `runs/*.json` (idempotent; `--exclude-benchmark`
+    leakage guard). `tests/test_episodic.py` — 5 CPU-only tests.
+  - Deps: `uv sync --extra memory`.
+- **Done** ✅: seeded 49 successful AIME train-split solves; relevant, leakage-free hints verified
+  firing on real AIME24 test problems; failed solves never surfaced; tests pass. An optional
+  same-domain A/B (seed train → eval AIME24 with `--memory`) is one command away — see
+  [docs/research.md](docs/research.md#phase-5--episodic-cross-episode-memory). Reported as a
+  capability, not an accuracy claim (n=30 noise floor).
 
 ## Phase 6 — Report & polish ⏳
 - **Goal**: close the loop — quantify what the training bought.

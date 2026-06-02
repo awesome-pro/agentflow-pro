@@ -36,9 +36,11 @@ class Planner:
         self._client = client
         self._temperature = temperature
 
-    def plan(self, query: str, memory_context: str) -> PlannerOutput:
+    def plan(self, query: str, memory_context: str, hints: str = "") -> PlannerOutput:
+        hint_block = f"{hints}\n\n" if hints else ""
         user_msg = (
             f"Question: {query}\n\n"
+            f"{hint_block}"
             f"Steps taken so far:\n{memory_context}\n\n"
             "What is the next best action?"
         )

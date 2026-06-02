@@ -12,8 +12,8 @@ are the curated, citable runs.)
 | AIME 2024 | 30 | **33.3%** (10/30) | 4.03 | `max_steps=6`, `temp=0`, think off | [`eval_aime24_20260520T103641Z.json`](eval_aime24_20260520T103641Z.json) |
 | GPQA Diamond | 100 | **40.0%** (40/100) | 3.09 | `max_steps=6`, `temp=0`, think off | [`eval_gpqa_20260530T103820Z.json`](eval_gpqa_20260530T103820Z.json) |
 
-Both are honestly verified (no false positives). These are the pre-training numbers
-the DAPO + PRM run has to beat.
+Both were verified against the gold answers with no false positives — the pre-training
+numbers the DAPO + PRM run has to beat.
 
 ## After DAPO + PRM (the "after")
 
@@ -27,7 +27,7 @@ the training.
 | AIME 2024 | 30 | 33.3% (10/30) | 30.0% (9/30) | **−3.3 pts** (within noise) | 4.03 → 4.37 | [`eval_aime24_20260531T224121Z.json`](eval_aime24_20260531T224121Z.json) |
 | GPQA Diamond | 100 | 40.0% (40/100) | **45.0% (45/100)** | **+5.0 pts** | 3.09 → 3.19 | [`eval_gpqa_20260531T230946Z.json`](eval_gpqa_20260531T230946Z.json) |
 
-### How to read this (honest analysis)
+### Reading the results
 
 - **GPQA +5.0 pts (n=100) is the reliable signal — and it is cross-domain.** The Planner was
   trained only on AIME *math*, yet improved on GPQA *science multiple-choice*. The process

@@ -94,6 +94,7 @@ def run_eval(
     benchmark: str,
     limit: int | None = None,
     task_timeout_s: float = 300.0,
+    record_episodes: bool = True,
 ) -> EvalReport:
     subset = tasks[:limit] if limit is not None else tasks
     results: list[EvalResult] = []
@@ -130,6 +131,14 @@ def run_eval(
                     trajectory=r.trajectory,
                     elapsed_seconds=elapsed,
                 )
+                # Record into cross-episode memory AFTER scoring (so a problem can
+                # never retrieve itself) and WITH the known correctness, so only
+                # solves that actually worked become future hints.
+                if record_episodes and getattr(solver, "episodic", None) is not None:
+                    solver.episodic.add_episode(
+                        t.question, r.answer, r.trajectory,
+                        success=correct, benchmark=benchmark,
+                    )
             except (_TaskTimeout, Exception) as e:
                 elapsed = perf_counter() - started
                 # Salvage whatever the solver completed before the hang — the

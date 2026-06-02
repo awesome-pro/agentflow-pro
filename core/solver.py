@@ -4,6 +4,7 @@ from rich.table import Table
 
 from .llm import OllamaClient
 from .memory import Memory
+from .episodic import EpisodicMemory
 from .planner import Planner
 from .executor import Executor
 from .verifier import Verifier
@@ -24,12 +25,16 @@ class Solver:
         temperature: float = 0.7,
         verbose: bool = True,
         think: bool = False,
+        episodic: EpisodicMemory | None = None,
     ):
         client = OllamaClient(base_url=base_url, model=model, think=think)
         self.planner = Planner(client=client, temperature=temperature)
         self.executor = Executor()
         self.verifier = Verifier(client=client, temperature=temperature)
         self.memory = Memory()
+        # Cross-episode store (Phase 5). None ⇒ disabled (the default). The Solver
+        # only READS hints from it; the caller writes episodes after scoring.
+        self.episodic = episodic
         self.max_steps = max_steps
         self.verbose = verbose
         self.think = think
@@ -42,6 +47,12 @@ class Solver:
         if self.verbose:
             console.print(Panel(f"[bold cyan]Query:[/bold cyan] {query}", expand=False))
 
+        # Retrieve cross-episode hints ONCE per solve — the query is fixed for the
+        # whole loop, so there's no reason to re-search every step.
+        hints = self.episodic.to_hints(query) if self.episodic is not None else ""
+        if hints and self.verbose:
+            console.print(Panel(hints, title="[dim]Episodic hints[/dim]", expand=False, border_style="dim"))
+
         for step in range(1, self.max_steps + 1):
             if on_step is not None:
                 on_step(step, self.max_steps)
@@ -51,9 +62,9 @@ class Solver:
             # --- Planner ---
             if self.verbose:
                 with console.status("[dim]Planner thinking…[/dim]", spinner="dots"):
-                    plan = self.planner.plan(query, self.memory.to_context())
+                    plan = self.planner.plan(query, self.memory.to_context(), hints=hints)
             else:
-                plan = self.planner.plan(query, self.memory.to_context())
+                plan = self.planner.plan(query, self.memory.to_context(), hints=hints)
             if self.verbose:
                 console.print(f"[green]Thought:[/green] {plan.thought}")
                 console.print(f"[green]Action:[/green]  {plan.action.value}  →  {plan.action_input[:120]}")

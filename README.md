@@ -79,17 +79,17 @@ The loop, module contracts, and tool internals are documented in
 | Reward model | — | **Qwen3-0.6B regression head**, trained on LLM-judge labels |
 | Tool layer | bespoke | **FastMCP** server + sandboxed Python exec |
 | LLM serving | — | Ollama **native `/api/chat`** (see *Engineering* below) |
-| Memory | in-task | in-task; Qdrant cross-episode planned |
+| Memory | in-task | in-task **+ Qdrant cross-episode retrieval** (`--memory`) |
 
 Full design + the experimental protocol: **[docs/research.md](docs/research.md)**.
 
 ---
 
-## Contribution 1 — DAPO, honestly accounted
+## Contribution 1 — DAPO, component by component
 
-[DAPO](https://arxiv.org/abs/2503.14476) is four tricks on top of GRPO. TRL 1.4's `GRPOTrainer`
-(`loss_type="dapo"`) implements four of the five pieces I needed; **the fifth is mine.** I think
-being precise about that line is the honest version of "I implemented DAPO":
+[DAPO](https://arxiv.org/abs/2503.14476) is four techniques on top of GRPO. TRL 1.4's `GRPOTrainer`
+(`loss_type="dapo"`) implements four of the five pieces I needed; **the fifth is mine.** Here is
+exactly where each piece comes from:
 
 | DAPO component | Where it comes from |
 |---|---|
